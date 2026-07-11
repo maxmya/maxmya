@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- Diagnostic Error Logger Overlay -->
+  <script>
+    window.onerror = function(message, source, lineno, colno, error) {
+      const div = document.createElement('div');
+      div.style.position = 'fixed';
+      div.style.top = '0';
+      div.style.left = '0';
+      div.style.width = '100vw';
+      div.style.height = '100vh';
+      div.style.backgroundColor = '#0f172a';
+      div.style.color = '#f8fafc';
+      div.style.padding = '32px';
+      div.style.fontFamily = 'monospace';
+      div.style.zIndex = '999999';
+      div.style.overflow = 'auto';
+      div.innerHTML = '<h2 style="color:#ef4444;margin-bottom:16px;">🚨 Runtime Error Detected</h2>' +
+                      '<p><strong>Message:</strong> ' + message + '</p>' +
+                      '<p><strong>File:</strong> ' + source + '</p>' +
+                      '<p><strong>Line:</strong> ' + lineno + ':' + colno + '</p>' +
+                      '<pre style="background:#1e293b;padding:16px;border-radius:8px;margin-top:16px;overflow:auto;white-space:pre-wrap;">' + (error ? error.stack : 'No stack trace available') + '</pre>';
+      document.documentElement.appendChild(div);
+      return false;
+    };
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mahmoud & Marawan 2D Char Creator</title>
+  <link rel="stylesheet" href="index.css?v=2">
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+  <div id="app" class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="logo">
+        <span class="logo-icon">✨</span>
+        <div class="title-wrapper" style="display: flex; flex-direction: column;">
+          <h1>Mahmoud & Marawan 2D Char Creator</h1>
+          <span class="subtitle" style="font-size: 0.8rem; color: #94a3b8; font-weight: normal; margin-top: 2px;">Vector Rig Engine</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <label for="import-json" class="btn btn-secondary">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+          Import JSON
+        </label>
+        <input type="file" id="import-json" accept=".json" style="display: none;">
+        
+        <button id="export-json" class="btn btn-secondary">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          Export JSON
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="workspace">
+      <!-- Left Panel: Customizer -->
+      <aside class="panel sidebar-left">
+        <div class="panel-header">
+          <h2>Customization</h2>
+        </div>
+        
+        <!-- Navigation Tabs -->
+        <nav class="sidebar-tabs">
+          <button class="tab-btn active" data-tab="body">Body</button>
+          <button class="tab-btn" data-tab="outfit">Outfit</button>
+          <button class="tab-btn" data-tab="equipment">Equipment</button>
+          <button class="tab-btn" data-tab="presets">Presets</button>
+        </nav>
+
+        <!-- Tab Contents -->
+        <div class="tab-content-container">
+          <!-- Body Tab -->
+          <div class="tab-pane active" id="tab-body">
+            <div class="control-group">
+              <label>Build / Width</label>
+              <input type="range" id="slider-build" min="0.7" max="1.4" step="0.05" value="1.0" class="value-slider">
+            </div>
+
+            <div class="control-group">
+              <label>Height / Leg Length</label>
+              <input type="range" id="slider-height" min="0.8" max="1.5" step="0.05" value="1.0" class="value-slider">
+            </div>
+
+            <div class="control-group">
+              <label>Gender & Anatomy</label>
+              <select id="select-gender" style="margin-bottom: 8px;">
+                <option value="male" selected>Male Body</option>
+                <option value="female">Female Body</option>
+              </select>
+              <div id="chest-wrapper">
+                <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-top: 4px;">Chest Size (Female Only)</label>
+                <input type="range" id="slider-bust" min="0" max="2.0" step="0.1" value="0.5" class="value-slider">
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label>Outline Thickness</label>
+              <input type="range" id="slider-outline" min="0" max="6" step="0.5" value="3.5" class="value-slider">
+            </div>
+
+            <div class="control-group">
+              <label>Skin Tone</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-skin" value="#ffdbac">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#ffdbac" data-color="#ffdbac"></button>
+                  <button class="color-swatch" style="background:#f1c27d" data-color="#f1c27d"></button>
+                  <button class="color-swatch" style="background:#e0ac69" data-color="#e0ac69"></button>
+                  <button class="color-swatch" style="background:#c68642" data-color="#c68642"></button>
+                  <button class="color-swatch" style="background:#8d5524" data-color="#8d5524"></button>
+                  <button class="color-swatch" style="background:#a5f3fc" data-color="#a5f3fc"></button> <!-- Alien/Frost -->
+                </div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="select-head">Head Shape</label>
+              <select id="select-head">
+                <option value="round">Round Classic</option>
+                <option value="oval">Cute Chibi</option>
+                <option value="square">Robust Hero</option>
+                <option value="pointy">Elven/Sleek</option>
+                <option value="anime">Anime (Sharp Chin)</option>
+                <option value="diamond">Diamond (Wide)</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Face Details</label>
+              <div style="display:flex; flex-direction:column; gap:4px;">
+                <label style="font-size: 0.75rem; color:#94a3b8;">Eye Distance</label>
+                <input type="range" id="slider-eye-dist" min="0.5" max="2.0" step="0.1" value="1.0" class="value-slider">
+                
+                <label style="font-size: 0.75rem; color:#94a3b8; margin-top:8px;">Nose Size</label>
+                <input type="range" id="slider-nose-size" min="0.5" max="2.0" step="0.1" value="1.0" class="value-slider">
+                
+                <label style="font-size: 0.75rem; color:#94a3b8; margin-top:8px;">Nose Shape</label>
+                <select id="select-nose-shape">
+                  <option value="normal" selected>Normal/Button</option>
+                  <option value="pointy">Pointy</option>
+                  <option value="wide">Wide</option>
+                  <option value="none">None</option>
+                </select>
+
+                <label style="font-size: 0.75rem; color:#94a3b8; margin-top:8px;">Mouth Size</label>
+                <input type="range" id="slider-mouth-size" min="0.5" max="2.0" step="0.1" value="1.0" class="value-slider">
+                
+                <label style="font-size: 0.75rem; color:#94a3b8; margin-top:8px;">Mouth Pos (Y)</label>
+                <input type="range" id="slider-mouth-pos" min="-5" max="5" step="1" value="0" class="value-slider">
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label>Hair Style</label>
+              <select id="select-hair">
+                <option value="bald">None (Bald)</option>
+                <option value="spiky" selected>Spiky Adventurer</option>
+                <option value="curly">Curly Fro</option>
+                <option value="long">Flowing Long</option>
+                <option value="ponytail">Ponytail Swing</option>
+                <option value="mohawk">Cyber Punk Mohawk</option>
+                <option value="bob">Classic Bob</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Hair Color</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-hair" value="#4a3728">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#4a3728" data-color="#4a3728"></button>
+                  <button class="color-swatch" style="background:#242424" data-color="#242424"></button>
+                  <button class="color-swatch" style="background:#d1a054" data-color="#d1a054"></button>
+                  <button class="color-swatch" style="background:#b83232" data-color="#b83232"></button>
+                  <button class="color-swatch" style="background:#3b82f6" data-color="#3b82f6"></button>
+                  <button class="color-swatch" style="background:#10b981" data-color="#10b981"></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="select-eyes">Eye Style</label>
+              <select id="select-eyes">
+                <option value="normal" selected>Normal</option>
+                <option value="angry">Angry / Determined</option>
+                <option value="cute">Cute Anime</option>
+                <option value="tired">Tired (Bags)</option>
+                <option value="cat-eyes">Cat Slit</option>
+                <option value="glowing">Magical Glow</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Eye Color</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-eyes" value="#0f172a">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#0f172a" data-color="#0f172a"></button>
+                  <button class="color-swatch" style="background:#3b82f6" data-color="#3b82f6"></button>
+                  <button class="color-swatch" style="background:#10b981" data-color="#10b981"></button>
+                  <button class="color-swatch" style="background:#8b5cf6" data-color="#8b5cf6"></button>
+                  <button class="color-swatch" style="background:#ef4444" data-color="#ef4444"></button>
+                  <button class="color-swatch" style="background:#eab308" data-color="#eab308"></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label>Mouth Expression</label>
+              <select id="select-mouth">
+                <option value="neutral">Neutral</option>
+                <option value="smile" selected>Happy Smile</option>
+                <option value="frown">Sad Frown</option>
+                <option value="open">Open Shout</option>
+                <option value="blush">Blushing</option>
+                <option value="smirk">Cocky Smirk</option>
+                <option value="surprised">Surprised (O)</option>
+                <option value="teeth">Teeth Gritting</option>
+              </select>
+            </div>
+
+          </div>
+
+          <!-- Outfit Tab -->
+          <div class="tab-pane" id="tab-outfit">
+            <div class="control-group">
+              <label for="select-shirt">Shirt Style</label>
+              <select id="select-shirt">
+                <option value="tunic" selected>Classic Tunic</option>
+                <option value="armor">Plate Armor</option>
+                <option value="plate-mail">Heavy Plate Mail</option>
+                <option value="leather-armor">Leather Thief Armor</option>
+                <option value="robe">Mage Robes</option>
+                <option value="cleric-robes">Cleric Robes</option>
+                <option value="casual-shirt">Casual T-Shirt</option>
+                <option value="ninja">Ninja Gi</option>
+                <option value="none">Bare Chest</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Shirt Color</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-shirt" value="#3b82f6">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#3b82f6" data-color="#3b82f6"></button>
+                  <button class="color-swatch" style="background:#ef4444" data-color="#ef4444"></button>
+                  <button class="color-swatch" style="background:#10b981" data-color="#10b981"></button>
+                  <button class="color-swatch" style="background:#f59e0b" data-color="#f59e0b"></button>
+                  <button class="color-swatch" style="background:#6366f1" data-color="#6366f1"></button>
+                  <button class="color-swatch" style="background:#9333ea" data-color="#9333ea"></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="select-pants">Pants / Legwear</label>
+              <select id="select-pants">
+                <option value="trousers">Trousers</option>
+                <option value="shorts">Shorts</option>
+                <option value="skirt">Skirt</option>
+                <option value="armored">Armored Greaves</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Pants Color</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-pants" value="#4b5563">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#4b5563" data-color="#4b5563"></button>
+                  <button class="color-swatch" style="background:#1f2937" data-color="#1f2937"></button>
+                  <button class="color-swatch" style="background:#d1d5db" data-color="#d1d5db"></button>
+                  <button class="color-swatch" style="background:#b45309" data-color="#b45309"></button>
+                  <button class="color-swatch" style="background:#06b6d4" data-color="#06b6d4"></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="select-shoes">Shoes / Footwear</label>
+              <select id="select-shoes">
+                <option value="boots">Leather Boots</option>
+                <option value="sneakers">Light Sneakers</option>
+                <option value="armored">Steel Sabatons</option>
+                <option value="barefoot">Barefoot</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Shoes Color</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-shoes" value="#78350f">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#78350f" data-color="#78350f"></button>
+                  <button class="color-swatch" style="background:#1f2937" data-color="#1f2937"></button>
+                  <button class="color-swatch" style="background:#ef4444" data-color="#ef4444"></button>
+                  <button class="color-swatch" style="background:#ffffff" data-color="#ffffff"></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Equipment Tab -->
+          <div class="tab-pane" id="tab-equipment">
+            <div class="control-group">
+              <label for="select-hat">Headwear</label>
+              <select id="select-hat">
+                <option value="none">None</option>
+                <option value="knight-helm">Knight Helmet</option>
+                <option value="wizard-hat">Wizard Pointy Hat</option>
+                <option value="rogue-hood">Rogue Hood</option>
+                <option value="crown">Royal Crown</option>
+                <option value="bandana">Bandana</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Headwear Color</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-hat" value="#6b7280">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#6b7280" data-color="#6b7280"></button>
+                  <button class="color-swatch" style="background:#374151" data-color="#374151"></button>
+                  <button class="color-swatch" style="background:#8b5cf6" data-color="#8b5cf6"></button>
+                  <button class="color-swatch" style="background:#d97706" data-color="#d97706"></button>
+                  <button class="color-swatch" style="background:#dc2626" data-color="#dc2626"></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="select-cape">Backwear / Cape</label>
+              <select id="select-cape">
+                <option value="none">None</option>
+                <option value="cape">Flowing Cape</option>
+                <option value="wings">Fairy Wings</option>
+                <option value="quiver">Archers Quiver</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Backwear Color</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-cape" value="#dc2626">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#dc2626" data-color="#dc2626"></button>
+                  <button class="color-swatch" style="background:#2563eb" data-color="#2563eb"></button>
+                  <button class="color-swatch" style="background:#16a34a" data-color="#16a34a"></button>
+                  <button class="color-swatch" style="background:#1e2937" data-color="#1e2937"></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="select-weapon">Held Weapon (Right Hand)</label>
+              <select id="select-weapon">
+                <option value="none" selected>Empty Hands</option>
+                <option value="sword">Broadsword</option>
+                <option value="dagger">Rogue Dagger</option>
+                <option value="staff">Magic Staff</option>
+                <option value="bow">Longbow</option>
+                <option value="axe">Battle Axe</option>
+                <option value="spear">Spear</option>
+                <option value="mace">Mace</option>
+                <option value="wand">Magic Wand</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Weapon Color</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-weapon" value="#d1d5db">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#d1d5db" data-color="#d1d5db"></button>
+                  <button class="color-swatch" style="background:#b45309" data-color="#b45309"></button>
+                  <button class="color-swatch" style="background:#3b82f6" data-color="#3b82f6"></button>
+                  <button class="color-swatch" style="background:#10b981" data-color="#10b981"></button>
+                  <button class="color-swatch" style="background:#ec4899" data-color="#ec4899"></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label for="select-shield">Left Hand Held</label>
+              <select id="select-shield">
+                <option value="none">Empty Hand</option>
+                <option value="shield">Iron Kite Shield</option>
+                <option value="torch">Glowing Torch</option>
+                <option value="spellbook">Ancient Spellbook</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label>Left Hand Color</label>
+              <div class="color-picker-wrapper">
+                <input type="color" id="color-shield" value="#9ca3af">
+                <div class="color-presets">
+                  <button class="color-swatch" style="background:#9ca3af" data-color="#9ca3af"></button>
+                  <button class="color-swatch" style="background:#78350f" data-color="#78350f"></button>
+                  <button class="color-swatch" style="background:#fbbf24" data-color="#fbbf24"></button>
+                  <button class="color-swatch" style="background:#ef4444" data-color="#ef4444"></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Presets Tab -->
+          <div class="tab-pane" id="tab-presets">
+            <p class="section-help-text">Load a pre-configured vector template:</p>
+            <div class="presets-grid">
+              <button class="preset-card" data-preset="knight">
+                <span class="preset-icon">⚔️</span>
+                <span class="preset-name">Holy Knight</span>
+              </button>
+              <button class="preset-card" data-preset="mage">
+                <span class="preset-icon">🔮</span>
+                <span class="preset-name">Arcane Mage</span>
+              </button>
+              <button class="preset-card" data-preset="rogue">
+                <span class="preset-icon">🗡️</span>
+                <span class="preset-name">Shadow Rogue</span>
+              </button>
+              <button class="preset-card" data-preset="ranger">
+                <span class="preset-icon">🏹</span>
+                <span class="preset-name">Forest Ranger</span>
+              </button>
+            
+              <button class="preset-card" data-preset="cleric">
+                <span class="preset-icon">⛪</span>
+                <span class="preset-name">Holy Cleric</span>
+              </button>
+            
+              <button class="preset-card" data-preset="barbarian">
+                <span class="preset-icon">🪓</span>
+                <span class="preset-name">Barbarian</span>
+              </button>
+            
+              <button class="preset-card" data-preset="necromancer">
+                <span class="preset-icon">💀</span>
+                <span class="preset-name">Necromancer</span>
+              </button>
+
+              <button class="preset-card" data-preset="alien">
+                <span class="preset-icon">👽</span>
+                <span class="preset-name">Frost Alien</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center Panel: Live Viewport -->
+      <section class="viewport-area">
+        <!-- Viewport Canvas Container -->
+        <div class="canvas-wrapper">
+          <canvas id="view-canvas"></canvas>
+          
+          <!-- Quick Canvas Overlay Controls -->
+          <div class="viewport-hud">
+            <select id="select-direction" class="hud-select" title="Facing Direction" style="background: transparent; border: none; color: var(--text-primary); font-family: var(--font-sans); font-size: 13px; font-weight: 500; outline: none; cursor: pointer;">
+              <option value="0">South (Front)</option>
+              <option value="1">South-East</option>
+              <option value="2">East (Profile)</option>
+              <option value="3">North-East</option>
+              <option value="4">North (Back)</option>
+              <option value="5">North-West</option>
+              <option value="6">West (Profile)</option>
+              <option value="7">South-West</option>
+            </select>
+            <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
+            <button id="btn-zoom-in" class="hud-btn" title="Zoom In">+</button>
+            <span id="txt-zoom" class="hud-text">100%</span>
+            <button id="btn-zoom-out" class="hud-btn" title="Zoom Out">-</button>
+            <button id="btn-grid-toggle" class="hud-btn active" title="Toggle Grid">🌐</button>
+            <button id="btn-reset-cam" class="hud-btn" title="Reset Camera">🎯</button>
+          </div>
+        </div>
+
+        <!-- Animation Timeline Panel -->
+        <div class="timeline-panel">
+          <div class="timeline-row">
+            <!-- Playback Control -->
+            <button id="btn-play-pause" class="btn btn-primary btn-round" title="Play / Pause Animation">
+              <span class="play-icon">▶</span>
+            </button>
+            
+            <!-- Animation Selector -->
+            <div class="animation-selector-wrapper">
+              <label for="select-anim" class="sr-only">Animation</label>
+              <select id="select-anim">
+                <option value="idle">Idle Loop</option>
+                <option value="walk" selected>Walk Cycle</option>
+                <option value="run">Run Sprint</option>
+                <option value="jump">Jump / Fall Curve</option>
+                <option value="attack">Attack Slash</option>
+              </select>
+            </div>
+
+            <!-- Animation Time Slider -->
+            <div class="scrubber-wrapper">
+              <span class="time-label">Frame</span>
+              <input type="range" id="animation-scrubber" min="0" max="100" value="0" class="time-slider">
+              <span id="txt-frame-index" class="time-indicator">0/100</span>
+            </div>
+
+            <!-- Animation Speed -->
+            <div class="speed-control">
+              <label for="slider-speed">Speed</label>
+              <input type="range" id="slider-speed" min="0.1" max="2" step="0.1" value="1.0" class="speed-slider">
+              <span id="txt-speed" class="speed-indicator">1.0x</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Exporter Configuration -->
+      <aside class="panel sidebar-right">
+        <div class="panel-header">
+          <h2>Spritesheet Export</h2>
+        </div>
+
+        <div class="panel-body">
+          <div class="control-group">
+            <label for="select-export-layout">Export Target</label>
+            <select id="select-export-layout">
+              <option value="single_dir">Current Direction (1 Row)</option>
+              <option value="all_dir">8-Directional Sheet (8 Rows)</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="select-frame-size">Frame Resolution</label>
+            <select id="select-frame-size">
+              <option value="64">64 x 64 px</option>
+              <option value="128" selected>128 x 128 px</option>
+              <option value="256">256 x 256 px</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="slider-frame-count">Frames per Animation</label>
+            <input type="range" id="slider-frame-count" min="4" max="24" step="2" value="8" class="value-slider">
+            <span id="txt-frame-count" class="slider-val">8 frames</span>
+          </div>
+
+          <div class="control-group">
+            <label for="slider-padding">Frame Padding (px)</label>
+            <input type="range" id="slider-padding" min="0" max="16" step="2" value="4" class="value-slider">
+            <span id="txt-padding" class="slider-val">4 px</span>
+          </div>
+
+          <div class="control-group checkbox-group">
+            <input type="checkbox" id="check-include-shadow" checked>
+            <label for="check-include-shadow">Render floor shadows in sheet</label>
+          </div>
+
+          <div class="checkbox-group">
+            <input type="checkbox" id="check-export-atlas">
+            <label for="check-export-atlas">Generate LibGDX .atlas file</label>
+          </div>
+                
+          <div class="checkbox-group">
+            <input type="checkbox" id="check-export-metadata">
+            <label for="check-export-metadata">Export Joint/Outfit Metadata (.json)</label>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- Export Spritesheet Preview Box -->
+          <div class="export-preview-container">
+            <label>Spritesheet Preview</label>
+            <div class="export-preview" style="padding-bottom: 0;">
+            <div class="preview-container" style="resize: both; overflow: hidden; width: 100%; height: 160px; min-height: 50px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+              <canvas id="export-preview-canvas"></canvas>
+            </div>
+            <div class="export-stats">
+              <span id="export-dimensions">Resolution: -- x -- px</span>
+            </div>
+          </div>
+
+          <button id="btn-export-png" class="btn btn-primary btn-full btn-glow">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            Download Spritesheet (PNG)
+          </button>
+
+          <button id="btn-export-frame" class="btn btn-secondary btn-full" style="margin-top: 10px;">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 12h.01M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+            Download Current Frame (PNG)
+          </button>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Loading scripts as ES modules -->
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

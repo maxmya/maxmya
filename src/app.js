@@ -3,8 +3,8 @@
  * Integrates viewport loop, character state listeners, presets loader, and export compilers.
  */
 
-import { Character } from './character.js';
-import { ViewportCanvas } from './canvas.js';
+import { Character } from './character.js?v=6';
+import { ViewportCanvas } from './canvas.js?v=6';
 import {
   compileSpritesheet,
   downloadPNG,
@@ -12,8 +12,8 @@ import {
   downloadMetadataJSON,
   downloadConfigJSON,
   parseConfigJSON
-} from './exporter.js';
-import { getAnimationPose } from './animations.js';
+} from './exporter.js?v=6';
+import { getAnimationPose } from './animations.js?v=6';
 
 // Initialize on module load
   // 1. Initialize character and canvas engine
@@ -29,7 +29,8 @@ import { getAnimationPose } from './animations.js';
     // Customization inputs
     sliderBuild: document.getElementById('slider-build'),
     sliderHeight: document.getElementById('slider-height'),
-    selectDirection: document.getElementById('select-direction'),
+    dirButtons: document.querySelectorAll('.dir-btn'),
+    txtHudDirection: document.getElementById('txt-hud-direction'),
     selectGender: document.getElementById('select-gender'),
     chestWrapper: document.getElementById('chest-wrapper'),
     sliderBust: document.getElementById('slider-bust'),
@@ -66,11 +67,14 @@ import { getAnimationPose } from './animations.js';
     btnZoomOut: document.getElementById('btn-zoom-out'),
     txtZoom: document.getElementById('txt-zoom'),
     btnGridToggle: document.getElementById('btn-grid-toggle'),
+    btnSkeletonToggle: document.getElementById('btn-skeleton-toggle'),
     btnResetCam: document.getElementById('btn-reset-cam'),
 
     // Playback timeline elements
     btnPlayPause: document.getElementById('btn-play-pause'),
     selectAnim: document.getElementById('select-anim'),
+    selectAttackStyle: document.getElementById('select-attack-style'),
+    attackStyleContainer: document.getElementById('attack-style-container'),
     animationScrubber: document.getElementById('animation-scrubber'),
     txtFrameIndex: document.getElementById('txt-frame-index'),
     sliderSpeed: document.getElementById('slider-speed'),
@@ -248,7 +252,21 @@ import { getAnimationPose } from './animations.js';
   function syncUIFromModel() {
     elements.sliderBuild.value = char.build || 1.0;
     elements.sliderHeight.value = char.height || 1.0;
-    elements.selectDirection.value = char.direction || 0;
+    
+    elements.dirButtons.forEach(btn => {
+      if (parseInt(btn.dataset.dir) === char.direction) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+    if (elements.txtHudDirection) {
+      const dirNames = [
+        'South (Front)', 'South-East', 'East (Profile)', 'North-East',
+        'North (Back)', 'North-West', 'West (Profile)', 'South-West'
+      ];
+      elements.txtHudDirection.innerText = dirNames[char.direction] || 'South';
+    }
     
     if (elements.selectGender) {
       elements.selectGender.value = char.gender || 'male';
@@ -297,7 +315,9 @@ import { getAnimationPose } from './animations.js';
   function syncModelFromUI() {
     char.build = parseFloat(elements.sliderBuild.value);
     char.height = parseFloat(elements.sliderHeight.value);
-    char.direction = parseInt(elements.selectDirection.value);
+    
+    const activeDirBtn = document.querySelector('.dir-btn.active');
+    char.direction = activeDirBtn ? parseInt(activeDirBtn.dataset.dir) : 0;
     
     if (elements.selectGender) {
       char.gender = elements.selectGender.value;
@@ -362,7 +382,7 @@ import { getAnimationPose } from './animations.js';
 
   // Watch for change events on selects & pickers
   const syncInputs = [
-    elements.sliderBuild, elements.sliderHeight, elements.selectDirection,
+    elements.sliderBuild, elements.sliderHeight,
     elements.selectGender, elements.sliderBust, elements.sliderOutline,
     elements.sliderEyeDist, elements.sliderNoseSize, elements.selectNoseShape,
     elements.sliderMouthSize, elements.sliderMouthPos,
@@ -374,6 +394,47 @@ import { getAnimationPose } from './animations.js';
     elements.colorShield
   ];
   syncInputs.forEach(input => input.addEventListener('input', syncModelFromUI));
+
+  // Direction Pad Button Clicks
+  elements.dirButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      elements.dirButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      char.direction = parseInt(btn.dataset.dir);
+      
+      // Update HUD label
+      const dirNames = [
+        'South (Front)', 'South-East', 'East (Profile)', 'North-East',
+        'North (Back)', 'North-West', 'West (Profile)', 'South-West'
+      ];
+      if (elements.txtHudDirection) {
+        elements.txtHudDirection.innerText = dirNames[char.direction] || 'South';
+      }
+
+      viewport.requestRender();
+      updateExportPreview();
+    });
+  });
+
+  // Auto-adjust default proportions and settings when toggling female body
+  elements.selectGender.addEventListener('change', () => {
+    if (elements.selectGender.value === 'female') {
+      elements.sliderBuild.value = 0.85;
+      elements.sliderHeight.value = 0.95;
+      elements.sliderBust.value = 0.6;
+      if (elements.selectHair.value === 'bald' || elements.selectHair.value === 'mohawk') {
+        elements.selectHair.value = 'bob';
+      }
+      elements.selectPants.value = 'skirt';
+      if (elements.selectShirt.value === 'none') {
+        elements.selectShirt.value = 'casual-shirt';
+      }
+    } else {
+      elements.sliderBust.value = 0;
+    }
+    syncModelFromUI();
+    syncUIFromModel();
+  });
 
   // Swatch presets shortcut clicks
   document.querySelectorAll('.color-swatch').forEach(swatch => {
@@ -411,6 +472,13 @@ import { getAnimationPose } from './animations.js';
     viewport.requestRender();
   });
 
+  // HUD: Skeleton Toggle
+  elements.btnSkeletonToggle.addEventListener('click', () => {
+    viewport.showSkeleton = !viewport.showSkeleton;
+    elements.btnSkeletonToggle.classList.toggle('active', viewport.showSkeleton);
+    viewport.requestRender();
+  });
+
   // HUD callback hook: updates HUD text values when zoomed/frame ticks
   viewport.frameIndexCallback = (zoomPct, frameIndex) => {
     if (zoomPct) {
@@ -432,7 +500,19 @@ import { getAnimationPose } from './animations.js';
   // Animation Selection Dropdown
   elements.selectAnim.addEventListener('change', () => {
     viewport.animation = elements.selectAnim.value;
+    if (elements.selectAnim.value === 'attack') {
+      elements.attackStyleContainer.style.display = 'block';
+    } else {
+      elements.attackStyleContainer.style.display = 'none';
+    }
     viewport.currentFrame = 0;
+    viewport.requestRender();
+    updateExportPreview();
+  });
+
+  // Attack Style Dropdown
+  elements.selectAttackStyle.addEventListener('change', () => {
+    viewport.attackStyle = elements.selectAttackStyle.value;
     viewport.requestRender();
     updateExportPreview();
   });
@@ -480,7 +560,8 @@ import { getAnimationPose } from './animations.js';
       layout: elements.selectExportLayout.value,
       drawShadow: elements.checkIncludeShadow.checked,
       exportAtlas: elements.checkExportAtlas.checked,
-      currentAnim: viewport.animation
+      currentAnim: viewport.animation,
+      attackStyle: elements.selectAttackStyle.value
     };
     const { exportCanvas, metadata } = compileSpritesheet(char, options);
     const pngName = `chromaforge_${viewport.animation}_sheet.png`;
@@ -520,7 +601,7 @@ import { getAnimationPose } from './animations.js';
 
     // Render using current anim progress
     const progress = viewport.currentFrame / viewport.frameCount;
-    const pose = getAnimationPose(viewport.animation, progress);
+    const pose = getAnimationPose(viewport.animation, progress, char.direction, viewport.attackStyle);
     char.render(tempCtx, pose, { drawShadow });
     tempCtx.restore();
 
@@ -554,7 +635,8 @@ import { getAnimationPose } from './animations.js';
       padding: elements.sliderPadding.value,
       layout: elements.selectExportLayout.value,
       drawShadow: elements.checkIncludeShadow.checked,
-      currentAnim: viewport.animation
+      currentAnim: viewport.animation,
+      attackStyle: elements.selectAttackStyle.value
     };
 
     const { exportCanvas } = compileSpritesheet(char, options);

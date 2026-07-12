@@ -3,7 +3,7 @@
  * Renders keyframe loops to grid arrays, compiles transparent PNGs, and loads/saves JSON configs.
  */
 
-import { getAnimationPose } from './animations.js';
+import { getAnimationPose } from './animations.js?v=6';
 
 export function compileSpritesheet(character, options = {}) {
   const frameSize = parseInt(options.frameSize) || 128;
@@ -12,6 +12,7 @@ export function compileSpritesheet(character, options = {}) {
   const layout = options.layout || 'single_dir'; 
   const drawShadow = options.drawShadow !== false;
   const currentAnim = options.currentAnim || 'walk';
+  const attackStyle = options.attackStyle || 'melee';
   
   let rows = 1;
   let cols = frameCount;
@@ -31,6 +32,7 @@ export function compileSpritesheet(character, options = {}) {
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+  window.isOutlinePass = false;
 
   const baseScale = frameSize / 128;
 
@@ -49,7 +51,7 @@ export function compileSpritesheet(character, options = {}) {
 
     for (let c = 0; c < cols; c++) {
       const progress = c / cols;
-      const pose = getAnimationPose(currentAnim, progress);
+      const pose = getAnimationPose(currentAnim, progress, character.direction, attackStyle);
 
       const cellX = c * (frameSize + padding);
       const cellY = r * (frameSize + padding);

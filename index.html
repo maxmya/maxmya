@@ -28,11 +28,58 @@
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mahmoud & Marawan 2D Char Creator</title>
-  <link rel="stylesheet" href="index.css?v=2">
+  <link rel="stylesheet" href="index.css?v=3">
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    .direction-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 40px);
+      gap: 8px;
+      max-width: fit-content;
+      margin-top: 8px;
+      background: rgba(15, 23, 42, 0.4);
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+    }
+    .dir-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      width: 40px;
+      height: 40px;
+      border-radius: 6px;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      outline: none;
+    }
+    .dir-btn:hover {
+      background: var(--border-color);
+      border-color: #6366f1;
+    }
+    .dir-btn.active {
+      background: #4f46e5;
+      border-color: #6366f1;
+      color: #ffffff;
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.35);
+    }
+    .dir-pad-center {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      font-size: 15px;
+      width: 40px;
+      height: 40px;
+    }
+  </style>
 </head>
 <body class="dark-theme">
   <div id="app" class="app-container">
@@ -87,6 +134,23 @@
             <div class="control-group">
               <label>Height / Leg Length</label>
               <input type="range" id="slider-height" min="0.8" max="1.5" step="0.05" value="1.0" class="value-slider">
+            </div>
+
+            <div class="control-group">
+              <label>Facing Direction</label>
+              <div class="direction-pad">
+                <button type="button" class="dir-btn" data-dir="5" title="North-West (5)">↖</button>
+                <button type="button" class="dir-btn" data-dir="4" title="North (4)">↑</button>
+                <button type="button" class="dir-btn" data-dir="3" title="North-East (3)">↗</button>
+                
+                <button type="button" class="dir-btn" data-dir="6" title="West (6)">←</button>
+                <div class="dir-pad-center">🎮</div>
+                <button type="button" class="dir-btn" data-dir="2" title="East (2)">→</button>
+                
+                <button type="button" class="dir-btn" data-dir="7" title="South-West (7)">↙</button>
+                <button type="button" class="dir-btn" data-dir="0" title="South (0)">↓</button>
+                <button type="button" class="dir-btn" data-dir="1" title="South-East (1)">↘</button>
+              </div>
             </div>
 
             <div class="control-group">
@@ -466,21 +530,13 @@
           
           <!-- Quick Canvas Overlay Controls -->
           <div class="viewport-hud">
-            <select id="select-direction" class="hud-select" title="Facing Direction" style="background: transparent; border: none; color: var(--text-primary); font-family: var(--font-sans); font-size: 13px; font-weight: 500; outline: none; cursor: pointer;">
-              <option value="0">South (Front)</option>
-              <option value="1">South-East</option>
-              <option value="2">East (Profile)</option>
-              <option value="3">North-East</option>
-              <option value="4">North (Back)</option>
-              <option value="5">North-West</option>
-              <option value="6">West (Profile)</option>
-              <option value="7">South-West</option>
-            </select>
+            <span id="txt-hud-direction" style="color: var(--text-primary); font-family: var(--font-sans); font-size: 13px; font-weight: 500;">South</span>
             <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
             <button id="btn-zoom-in" class="hud-btn" title="Zoom In">+</button>
             <span id="txt-zoom" class="hud-text">100%</span>
             <button id="btn-zoom-out" class="hud-btn" title="Zoom Out">-</button>
             <button id="btn-grid-toggle" class="hud-btn active" title="Toggle Grid">🌐</button>
+            <button id="btn-skeleton-toggle" class="hud-btn" title="Toggle Skeleton Overlay">💀</button>
             <button id="btn-reset-cam" class="hud-btn" title="Reset Camera">🎯</button>
           </div>
         </div>
@@ -498,10 +554,21 @@
               <label for="select-anim" class="sr-only">Animation</label>
               <select id="select-anim">
                 <option value="idle">Idle Loop</option>
-                <option value="walk" selected>Walk Cycle</option>
-                <option value="run">Run Sprint</option>
-                <option value="jump">Jump / Fall Curve</option>
+                <option value="walk">Walk Loop</option>
+                <option value="run">Run Loop</option>
+                <option value="jump">Jump Action</option>
                 <option value="attack">Attack Slash</option>
+                <option value="hurt">Hurt Recoil</option>
+                <option value="die">Die Collapse</option>
+              </select>
+            </div>
+
+            <!-- Attack Style Selector -->
+            <div class="animation-selector-wrapper" id="attack-style-container" style="display: none; margin-left: 8px;">
+              <label for="select-attack-style" class="sr-only">Attack Style</label>
+              <select id="select-attack-style" style="background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 12px; border-radius: 6px; outline: none; font-size: 13px; font-family: var(--font-sans); cursor: pointer;">
+                <option value="melee">Melee Slash</option>
+                <option value="ranged">Ranged Attack</option>
               </select>
             </div>
 
@@ -602,6 +669,6 @@
   </div>
 
   <!-- Loading scripts as ES modules -->
-  <script type="module" src="src/app.js"></script>
+  <script type="module" src="src/app.js?v=6"></script>
 </body>
 </html>

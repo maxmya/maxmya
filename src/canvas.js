@@ -3,7 +3,7 @@
  * Manages rendering viewport, zoom, panning, world grid, and frame-rate loops.
  */
 
-import { getAnimationPose } from './animations.js';
+import { getAnimationPose } from './animations.js?v=6';
 
 export class ViewportCanvas {
   /**
@@ -27,6 +27,8 @@ export class ViewportCanvas {
 
     // Grid config
     this.showGrid = true;
+    this.showSkeleton = false;
+    this.attackStyle = 'melee';
 
     // Animation playback state
     this.animation = 'walk';
@@ -81,12 +83,17 @@ export class ViewportCanvas {
   }
 
   /**
-   * Resizes the canvas backing store to match layout size
+   * Resizes the canvas backing store to match layout size with DPI awareness
    */
   resize() {
     const rect = this.canvas.parentElement.getBoundingClientRect();
-    this.canvas.width = rect.width;
-    this.canvas.height = rect.height;
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = rect.width * dpr;
+    this.canvas.height = rect.height * dpr;
+    this.canvas.style.width = rect.width + 'px';
+    this.canvas.style.height = rect.height + 'px';
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.dpr = dpr;
     this.requestRender();
   }
 
@@ -151,11 +158,16 @@ export class ViewportCanvas {
    * Main render call
    */
   render() {
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const dpr = this.dpr || 1;
+    const logicalW = this.canvas.width / dpr;
+    const logicalH = this.canvas.height / dpr;
+    this.ctx.save();
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ctx.clearRect(0, 0, logicalW, logicalH);
 
     // World center coordinates
-    const cx = this.canvas.width / 2 + this.panX;
-    const cy = this.canvas.height / 2 + 80 + this.panY; // Offset Y down to leave space for head
+    const cx = logicalW / 2 + this.panX;
+    const cy = logicalH / 2 + 80 + this.panY; // Offset Y down to leave space for head
 
     this.ctx.save();
     this.ctx.translate(cx, cy);
@@ -168,10 +180,78 @@ export class ViewportCanvas {
 
     // Get normalized frame progress (0.0 to 1.0)
     const progress = this.currentFrame / this.frameCount;
-    const pose = getAnimationPose(this.animation, progress);
+    const pose = getAnimationPose(this.animation, progress, this.character.direction, this.attackStyle);
 
     // Render character at world origin Y:0 (ground level)
     this.character.render(this.ctx, pose, { drawShadow: true });
+
+    this.ctx.restore();
+
+    // Draw skeleton on top in screen space if enabled
+    if (this.showSkeleton) {
+      this.drawSkeleton();
+    }
+    this.ctx.restore();
+  }
+
+  /**
+   * Draws a skeletal bone and joint node overlay on top of the viewport
+   */
+  drawSkeleton() {
+    const joints = this.character.lastRenderedJoints;
+    if (!joints || Object.keys(joints).length === 0) return;
+
+    this.ctx.save();
+    
+    // Connect bones
+    const bones = [
+      ['hip', 'neck'],
+      ['neck', 'head'],
+      ['neck', 'leftShoulder'],
+      ['neck', 'rightShoulder'],
+      ['leftShoulder', 'leftHand'],
+      ['rightShoulder', 'rightHand'],
+      ['hip', 'leftHip'],
+      ['hip', 'rightHip'],
+      ['leftHip', 'leftFoot'],
+      ['rightHip', 'rightFoot']
+    ];
+
+    this.ctx.strokeStyle = '#06b6d4'; // Cyan bones
+    this.ctx.lineWidth = 2.5;
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+
+    for (const [j1, j2] of bones) {
+      if (joints[j1] && joints[j2]) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(joints[j1].x, joints[j1].y);
+        this.ctx.lineTo(joints[j2].x, joints[j2].y);
+        this.ctx.stroke();
+      }
+    }
+
+    // Draw nodes
+    for (const [name, pos] of Object.entries(joints)) {
+      this.ctx.beginPath();
+      this.ctx.arc(pos.x, pos.y, 4.5, 0, Math.PI * 2);
+      
+      // Node coloring
+      if (name === 'head') {
+        this.ctx.fillStyle = '#ef4444'; // Red
+      } else if (name === 'leftHand' || name === 'rightHand') {
+        this.ctx.fillStyle = '#fbbf24'; // Yellow
+      } else if (name === 'leftFoot' || name === 'rightFoot') {
+        this.ctx.fillStyle = '#10b981'; // Green
+      } else {
+        this.ctx.fillStyle = '#8b5cf6'; // Purple
+      }
+      
+      this.ctx.strokeStyle = '#ffffff';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.fill();
+      this.ctx.stroke();
+    }
 
     this.ctx.restore();
   }
@@ -184,10 +264,16 @@ export class ViewportCanvas {
     const step = 32;
 
     this.ctx.save();
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.025)';
+    
+    // Transform coordinates to render flat grid on the isometric ground plane
+    const cos30 = 0.866025;
+    const sin30 = 0.5;
+    this.ctx.transform(cos30, sin30, -cos30, sin30, 0, 0);
+
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
     this.ctx.lineWidth = 1;
 
-    // Draw minor gridlines
+    // Draw minor gridlines on the ground plane
     for (let x = -size; x <= size; x += step) {
       if (x === 0) continue;
       this.ctx.beginPath();
@@ -203,29 +289,35 @@ export class ViewportCanvas {
       this.ctx.stroke();
     }
 
-    // Draw major axes (Ground line & Center origin axis)
-    this.ctx.strokeStyle = 'rgba(6, 182, 212, 0.2)'; // Faint Cyan
+    // Draw major axes (Ground axes)
+    this.ctx.strokeStyle = 'rgba(6, 182, 212, 0.22)'; // Faint Cyan X-axis
     this.ctx.lineWidth = 1.5;
-    
-    // Y-Axis (Center vertical)
     this.ctx.beginPath();
     this.ctx.moveTo(0, -size);
     this.ctx.lineTo(0, size);
     this.ctx.stroke();
 
-    // X-Axis (Ground horizontal line)
-    this.ctx.strokeStyle = 'rgba(139, 92, 246, 0.25)'; // Faint Purple
+    this.ctx.strokeStyle = 'rgba(139, 92, 246, 0.28)'; // Faint Purple Y-axis
     this.ctx.beginPath();
     this.ctx.moveTo(-size, 0);
     this.ctx.lineTo(size, 0);
     this.ctx.stroke();
 
-    // Small Origin Crosshair center circle
+    this.ctx.restore();
+
+    // Draw a small vertical Z-axis line at the origin (0, 0)
+    this.ctx.save();
+    this.ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)'; // Red vertical axis
+    this.ctx.lineWidth = 1.5;
     this.ctx.beginPath();
-    this.ctx.arc(0, 0, 3, 0, Math.PI * 2);
+    this.ctx.moveTo(0, 0);
+    this.ctx.lineTo(0, -64);
+    this.ctx.stroke();
+    
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
     this.ctx.fillStyle = '#06b6d4';
     this.ctx.fill();
-
     this.ctx.restore();
   }
 }

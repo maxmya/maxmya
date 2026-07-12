@@ -132,9 +132,30 @@ body {
 .workspace {
   flex: 1;
   display: grid;
-  grid-template-columns: 360px 1fr 340px;
+  grid-template-columns: var(--sidebar-left-width, 360px) 1fr var(--sidebar-right-width, 340px);
   height: calc(100vh - 64px);
   overflow: hidden;
+}
+
+/* Resizable sidebar handles */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background 0.15s ease;
+}
+.sidebar-resizer:hover {
+  background: var(--accent-primary);
+}
+.sidebar-resizer-left {
+  right: -3px;
+}
+.sidebar-resizer-right {
+  left: -3px;
 }
 
 /* Sidebar & Panel Design */
@@ -145,6 +166,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 .sidebar-right {
   border-right: none;
@@ -636,4 +658,38 @@ input[type="range"]::-webkit-slider-thumb:hover {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+/* Canvas HUD Styles */
+.canvas-hud {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.canvas-hud .direction-pad {
+  pointer-events: auto;
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas-hud .direction-label {
+  text-align: center;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Playback controls */
+.playback-controls {
+  display: flex;
+  align-items: center;
 }

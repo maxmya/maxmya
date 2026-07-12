@@ -28,7 +28,7 @@
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mahmoud & Marawan 2D Char Creator</title>
-  <link rel="stylesheet" href="index.css?v=3">
+  <link rel="stylesheet" href="index.css?v=4">
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -79,6 +79,19 @@
       width: 40px;
       height: 40px;
     }
+    .direction-label {
+      text-align: center;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+    }
+    .hud-divider {
+      width: 1px;
+      height: 20px;
+      background: rgba(255,255,255,0.1);
+      margin: 0 4px;
+    }
   </style>
 </head>
 <body class="dark-theme">
@@ -109,7 +122,8 @@
     <!-- Main Workspace Grid -->
     <main class="workspace">
       <!-- Left Panel: Customizer -->
-      <aside class="panel sidebar-left">
+      <aside class="panel sidebar-left" id="sidebar-left">
+        <div class="sidebar-resizer sidebar-resizer-left" id="resizer-left"></div>
         <div class="panel-header">
           <h2>Customization</h2>
         </div>
@@ -134,23 +148,6 @@
             <div class="control-group">
               <label>Height / Leg Length</label>
               <input type="range" id="slider-height" min="0.8" max="1.5" step="0.05" value="1.0" class="value-slider">
-            </div>
-
-            <div class="control-group">
-              <label>Facing Direction</label>
-              <div class="direction-pad">
-                <button type="button" class="dir-btn" data-dir="5" title="North-West (5)">↖</button>
-                <button type="button" class="dir-btn" data-dir="4" title="North (4)">↑</button>
-                <button type="button" class="dir-btn" data-dir="3" title="North-East (3)">↗</button>
-                
-                <button type="button" class="dir-btn" data-dir="6" title="West (6)">←</button>
-                <div class="dir-pad-center">🎮</div>
-                <button type="button" class="dir-btn" data-dir="2" title="East (2)">→</button>
-                
-                <button type="button" class="dir-btn" data-dir="7" title="South-West (7)">↙</button>
-                <button type="button" class="dir-btn" data-dir="0" title="South (0)">↓</button>
-                <button type="button" class="dir-btn" data-dir="1" title="South-East (1)">↘</button>
-              </div>
             </div>
 
             <div class="control-group">
@@ -180,7 +177,7 @@
                   <button class="color-swatch" style="background:#e0ac69" data-color="#e0ac69"></button>
                   <button class="color-swatch" style="background:#c68642" data-color="#c68642"></button>
                   <button class="color-swatch" style="background:#8d5524" data-color="#8d5524"></button>
-                  <button class="color-swatch" style="background:#a5f3fc" data-color="#a5f3fc"></button> <!-- Alien/Frost -->
+                  <button class="color-swatch" style="background:#a5f3fc" data-color="#a5f3fc"></button>
                 </div>
               </div>
             </div>
@@ -497,178 +494,199 @@
                 <span class="preset-icon">🏹</span>
                 <span class="preset-name">Forest Ranger</span>
               </button>
-            
               <button class="preset-card" data-preset="cleric">
                 <span class="preset-icon">⛪</span>
                 <span class="preset-name">Holy Cleric</span>
               </button>
-            
               <button class="preset-card" data-preset="barbarian">
                 <span class="preset-icon">🪓</span>
                 <span class="preset-name">Barbarian</span>
               </button>
-            
               <button class="preset-card" data-preset="necromancer">
                 <span class="preset-icon">💀</span>
                 <span class="preset-name">Necromancer</span>
               </button>
-
               <button class="preset-card" data-preset="alien">
                 <span class="preset-icon">👽</span>
                 <span class="preset-name">Frost Alien</span>
               </button>
             </div>
           </div>
+
         </div>
       </aside>
 
-      <!-- Center Panel: Live Viewport -->
-      <section class="viewport-area">
-        <!-- Viewport Canvas Container -->
-        <div class="canvas-wrapper">
+      <!-- Center Panel: Canvas & Controls -->
+      <section class="viewport-area" id="viewport-area">
+        <!-- Viewport Canvas Frame -->
+        <div class="canvas-wrapper" id="canvas-wrapper">
           <canvas id="view-canvas"></canvas>
           
-          <!-- Quick Canvas Overlay Controls -->
+          <!-- Direction Pad on Canvas (HUD) -->
+          <div class="canvas-hud direction-hud" id="direction-hud">
+            <div class="direction-pad" role="group" aria-label="Character facing direction">
+              <button type="button" class="dir-btn" data-dir="5" title="North-West (5)">↖</button>
+              <button type="button" class="dir-btn" data-dir="4" title="North (4)">↑</button>
+              <button type="button" class="dir-btn" data-dir="3" title="North-East (3)">↗</button>
+              
+              <button type="button" class="dir-btn" data-dir="6" title="West (6)">←</button>
+              <div class="dir-pad-center" aria-hidden="true">🎮</div>
+              <button type="button" class="dir-btn" data-dir="2" title="East (2)">→</button>
+              
+              <button type="button" class="dir-btn" data-dir="7" title="South-West (7)">↙</button>
+              <button type="button" class="dir-btn" data-dir="0" title="South (0)">↓</button>
+              <button type="button" class="dir-btn" data-dir="1" title="South-East (1)">↘</button>
+            </div>
+            <div class="direction-label" id="hud-direction-label">South (Front)</div>
+          </div>
+
+          <!-- HUD Overlay Controls -->
           <div class="viewport-hud">
-            <span id="txt-hud-direction" style="color: var(--text-primary); font-family: var(--font-sans); font-size: 13px; font-weight: 500;">South</span>
-            <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
-            <button id="btn-zoom-in" class="hud-btn" title="Zoom In">+</button>
-            <span id="txt-zoom" class="hud-text">100%</span>
-            <button id="btn-zoom-out" class="hud-btn" title="Zoom Out">-</button>
-            <button id="btn-grid-toggle" class="hud-btn active" title="Toggle Grid">🌐</button>
-            <button id="btn-skeleton-toggle" class="hud-btn" title="Toggle Skeleton Overlay">💀</button>
-            <button id="btn-reset-cam" class="hud-btn" title="Reset Camera">🎯</button>
+            <button class="hud-btn" id="btn-zoom-in" title="Zoom In">+</button>
+            <button class="hud-btn" id="btn-zoom-out" title="Zoom Out">−</button>
+            <span class="hud-text" id="txt-zoom">250%</span>
+            <div class="hud-divider"></div>
+            <button class="hud-btn" id="btn-grid-toggle" title="Toggle Grid">⯁</button>
+            <button class="hud-btn" id="btn-skeleton-toggle" title="Toggle Skeleton">☷</button>
+            <button class="hud-btn" id="btn-reset-cam" title="Reset Camera">⌖</button>
           </div>
         </div>
 
-        <!-- Animation Timeline Panel -->
+        <!-- Timeline & Scrubber Panel -->
         <div class="timeline-panel">
           <div class="timeline-row">
-            <!-- Playback Control -->
-            <button id="btn-play-pause" class="btn btn-primary btn-round" title="Play / Pause Animation">
-              <span class="play-icon">▶</span>
-            </button>
-            
-            <!-- Animation Selector -->
             <div class="animation-selector-wrapper">
               <label for="select-anim" class="sr-only">Animation</label>
               <select id="select-anim">
-                <option value="idle">Idle Loop</option>
-                <option value="walk">Walk Loop</option>
-                <option value="run">Run Loop</option>
-                <option value="jump">Jump Action</option>
-                <option value="attack">Attack Slash</option>
-                <option value="hurt">Hurt Recoil</option>
-                <option value="die">Die Collapse</option>
+                <option value="idle">Idle</option>
+                <option value="walk">Walk</option>
+                <option value="run">Run</option>
+                <option value="jump">Jump</option>
+                <option value="attack">Attack</option>
+                <option value="hurt">Hurt</option>
+                <option value="die">Die</option>
               </select>
             </div>
 
-            <!-- Attack Style Selector -->
-            <div class="animation-selector-wrapper" id="attack-style-container" style="display: none; margin-left: 8px;">
+            <div class="attack-style-container" id="attack-style-container" style="display: none;">
               <label for="select-attack-style" class="sr-only">Attack Style</label>
-              <select id="select-attack-style" style="background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-primary); padding: 6px 12px; border-radius: 6px; outline: none; font-size: 13px; font-family: var(--font-sans); cursor: pointer;">
-                <option value="melee">Melee Slash</option>
-                <option value="ranged">Ranged Attack</option>
+              <select id="select-attack-style">
+                <option value="melee">Melee</option>
+                <option value="ranged">Ranged</option>
               </select>
             </div>
 
-            <!-- Animation Time Slider -->
             <div class="scrubber-wrapper">
               <span class="time-label">Frame</span>
-              <input type="range" id="animation-scrubber" min="0" max="100" value="0" class="time-slider">
-              <span id="txt-frame-index" class="time-indicator">0/100</span>
+              <input type="range" id="animation-scrubber" min="0" max="60" value="0" class="time-slider">
+              <span class="time-indicator" id="txt-frame-index">0/60</span>
             </div>
 
-            <!-- Animation Speed -->
+            <div class="playback-controls">
+              <button class="btn btn-round" id="btn-play-pause" title="Play/Pause">
+                <span class="play-icon">▶</span>
+              </button>
+            </div>
+
             <div class="speed-control">
               <label for="slider-speed">Speed</label>
-              <input type="range" id="slider-speed" min="0.1" max="2" step="0.1" value="1.0" class="speed-slider">
-              <span id="txt-speed" class="speed-indicator">1.0x</span>
+              <input type="range" id="slider-speed" min="0.1" max="3" step="0.1" value="1.0" class="speed-slider">
+              <span class="speed-indicator" id="txt-speed">1.0x</span>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Right Panel: Exporter Configuration -->
-      <aside class="panel sidebar-right">
+      <!-- Right Panel: Export & Config -->
+      <aside class="panel sidebar-right" id="sidebar-right">
+        <div class="sidebar-resizer sidebar-resizer-right" id="resizer-right"></div>
         <div class="panel-header">
-          <h2>Spritesheet Export</h2>
+          <h2>Export & Config</h2>
         </div>
-
         <div class="panel-body">
           <div class="control-group">
-            <label for="select-export-layout">Export Target</label>
+            <label>Layout</label>
             <select id="select-export-layout">
-              <option value="single_dir">Current Direction (1 Row)</option>
-              <option value="all_dir">8-Directional Sheet (8 Rows)</option>
+              <option value="horizontal">Horizontal Strip</option>
+              <option value="grid">Grid (4x4)</option>
+              <option value="vertical">Vertical Strip</option>
             </select>
           </div>
 
           <div class="control-group">
-            <label for="select-frame-size">Frame Resolution</label>
+            <label>Frame Size</label>
             <select id="select-frame-size">
-              <option value="64">64 x 64 px</option>
-              <option value="128" selected>128 x 128 px</option>
-              <option value="256">256 x 256 px</option>
+              <option value="64">64×64</option>
+              <option value="128" selected>128×128</option>
+              <option value="256">256×256</option>
+              <option value="512">512×512</option>
             </select>
           </div>
 
           <div class="control-group">
-            <label for="slider-frame-count">Frames per Animation</label>
-            <input type="range" id="slider-frame-count" min="4" max="24" step="2" value="8" class="value-slider">
-            <span id="txt-frame-count" class="slider-val">8 frames</span>
+            <label>Frame Count <span class="slider-val" id="txt-frame-count">8 frames</span></label>
+            <input type="range" id="slider-frame-count" min="1" max="60" step="1" value="8" class="value-slider">
           </div>
 
           <div class="control-group">
-            <label for="slider-padding">Frame Padding (px)</label>
-            <input type="range" id="slider-padding" min="0" max="16" step="2" value="4" class="value-slider">
-            <span id="txt-padding" class="slider-val">4 px</span>
+            <label>Padding <span class="slider-val" id="txt-padding">2 px</span></label>
+            <input type="range" id="slider-padding" min="0" max="20" step="1" value="2" class="value-slider">
           </div>
 
-          <div class="control-group checkbox-group">
+          <div class="checkbox-group">
             <input type="checkbox" id="check-include-shadow" checked>
-            <label for="check-include-shadow">Render floor shadows in sheet</label>
+            <label for="check-include-shadow">Include Shadow</label>
           </div>
-
           <div class="checkbox-group">
             <input type="checkbox" id="check-export-atlas">
-            <label for="check-export-atlas">Generate LibGDX .atlas file</label>
+            <label for="check-export-atlas">Export LibGDX Atlas</label>
           </div>
-                
           <div class="checkbox-group">
-            <input type="checkbox" id="check-export-metadata">
-            <label for="check-export-metadata">Export Joint/Outfit Metadata (.json)</label>
+            <input type="checkbox" id="check-export-metadata" checked>
+            <label for="check-export-metadata">Export Metadata JSON</label>
           </div>
 
           <div class="divider"></div>
 
-          <!-- Export Spritesheet Preview Box -->
           <div class="export-preview-container">
             <label>Spritesheet Preview</label>
-            <div class="export-preview" style="padding-bottom: 0;">
-            <div class="preview-container" style="resize: both; overflow: hidden; width: 100%; height: 160px; min-height: 50px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+            <div class="preview-box">
               <canvas id="export-preview-canvas"></canvas>
             </div>
-            <div class="export-stats">
-              <span id="export-dimensions">Resolution: -- x -- px</span>
-            </div>
+            <div class="info-text" id="export-dimensions">Resolution: —</div>
           </div>
 
-          <button id="btn-export-png" class="btn btn-primary btn-full btn-glow">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            Download Spritesheet (PNG)
+          <button class="btn btn-primary btn-glow btn-full" id="btn-export-png">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            Export Spritesheet PNG
+          </button>
+          <button class="btn btn-secondary btn-full" id="btn-export-frame">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1"></path></svg>
+            Export Current Frame
           </button>
 
-          <button id="btn-export-frame" class="btn btn-secondary btn-full" style="margin-top: 10px;">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 12h.01M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-            Download Current Frame (PNG)
-          </button>
+          <div class="divider"></div>
+
+          <div class="control-group">
+            <label for="import-json">Import / Export Config</label>
+            <div style="display: flex; gap: 8px;">
+              <label for="import-json" class="btn btn-secondary btn-full">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                Import JSON
+              </label>
+              <input type="file" id="import-json" accept=".json" style="display: none;">
+              <button id="export-json" class="btn btn-secondary btn-full">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Export JSON
+              </button>
+            </div>
+          </div>
         </div>
       </aside>
     </main>
   </div>
 
   <!-- Loading scripts as ES modules -->
-  <script type="module" src="src/app.js?v=6"></script>
+  <script type="module" src="src/app.js?v=7"></script>
 </body>
 </html>

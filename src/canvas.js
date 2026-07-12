@@ -31,7 +31,7 @@ export class ViewportCanvas {
     this.attackStyle = 'melee';
 
     // Animation playback state
-    this.animation = 'walk';
+    this.animation = 'idle';
     this.speed = 1.0;
     this.isPlaying = true;
     this.currentFrame = 0;
@@ -185,76 +185,81 @@ export class ViewportCanvas {
     // Render character at world origin Y:0 (ground level)
     this.character.render(this.ctx, pose, { drawShadow: true });
 
-    this.ctx.restore();
-
-    // Draw skeleton on top in screen space if enabled
+    // Draw skeleton inside the same camera transform so joints align at any zoom
     if (this.showSkeleton) {
       this.drawSkeleton();
     }
+
+    this.ctx.restore();
     this.ctx.restore();
   }
 
-  /**
-   * Draws a skeletal bone and joint node overlay on top of the viewport
-   */
-  drawSkeleton() {
-    const joints = this.character.lastRenderedJoints;
-    if (!joints || Object.keys(joints).length === 0) return;
+  /** 
+     * Draws a skeletal bone and joint node overlay on top of the viewport 
+     * Uses world coordinates from character, transforms them to screen space 
+     */
+    drawSkeleton() {
+      const joints = this.character.lastRenderedJoints;
+      if (!joints || Object.keys(joints).length === 0) return;
 
-    this.ctx.save();
+      this.ctx.save();
     
-    // Connect bones
-    const bones = [
-      ['hip', 'neck'],
-      ['neck', 'head'],
-      ['neck', 'leftShoulder'],
-      ['neck', 'rightShoulder'],
-      ['leftShoulder', 'leftHand'],
-      ['rightShoulder', 'rightHand'],
-      ['hip', 'leftHip'],
-      ['hip', 'rightHip'],
-      ['leftHip', 'leftFoot'],
-      ['rightHip', 'rightFoot']
-    ];
+      // Apply the same camera transform as the character render
+      this.ctx.translate(this.canvas.width / 2 / this.dpr, this.canvas.height / 2 / this.dpr + 80);
+      this.ctx.scale(this.zoom, this.zoom);
 
-    this.ctx.strokeStyle = '#06b6d4'; // Cyan bones
-    this.ctx.lineWidth = 2.5;
-    this.ctx.lineCap = 'round';
-    this.ctx.lineJoin = 'round';
+      // Connect bones
+      const bones = [
+        ['hip', 'neck'],
+        ['neck', 'head'],
+        ['neck', 'leftShoulder'],
+        ['neck', 'rightShoulder'],
+        ['leftShoulder', 'leftHand'],
+        ['rightShoulder', 'rightHand'],
+        ['hip', 'leftHip'],
+        ['hip', 'rightHip'],
+        ['leftHip', 'leftFoot'],
+        ['rightHip', 'rightFoot']
+      ];
 
-    for (const [j1, j2] of bones) {
-      if (joints[j1] && joints[j2]) {
+      this.ctx.strokeStyle = '#06b6d4'; // Cyan bones
+      this.ctx.lineWidth = 2.5 / this.zoom;
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+
+      for (const [j1, j2] of bones) {
+        if (joints[j1] && joints[j2]) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(joints[j1].x, joints[j1].y);
+          this.ctx.lineTo(joints[j2].x, joints[j2].y);
+          this.ctx.stroke();
+        }
+      }
+
+      // Draw nodes
+      for (const [name, pos] of Object.entries(joints)) {
         this.ctx.beginPath();
-        this.ctx.moveTo(joints[j1].x, joints[j1].y);
-        this.ctx.lineTo(joints[j2].x, joints[j2].y);
+        this.ctx.arc(pos.x, pos.y, 4.5 / this.zoom, 0, Math.PI * 2);
+      
+        // Node coloring
+        if (name === 'head') {
+          this.ctx.fillStyle = '#ef4444'; // Red
+        } else if (name === 'leftHand' || name === 'rightHand') {
+          this.ctx.fillStyle = '#fbbf24'; // Yellow
+        } else if (name === 'leftFoot' || name === 'rightFoot') {
+          this.ctx.fillStyle = '#10b981'; // Green
+        } else {
+          this.ctx.fillStyle = '#8b5cf6'; // Purple
+        }
+      
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1.5 / this.zoom;
+        this.ctx.fill();
         this.ctx.stroke();
       }
-    }
 
-    // Draw nodes
-    for (const [name, pos] of Object.entries(joints)) {
-      this.ctx.beginPath();
-      this.ctx.arc(pos.x, pos.y, 4.5, 0, Math.PI * 2);
-      
-      // Node coloring
-      if (name === 'head') {
-        this.ctx.fillStyle = '#ef4444'; // Red
-      } else if (name === 'leftHand' || name === 'rightHand') {
-        this.ctx.fillStyle = '#fbbf24'; // Yellow
-      } else if (name === 'leftFoot' || name === 'rightFoot') {
-        this.ctx.fillStyle = '#10b981'; // Green
-      } else {
-        this.ctx.fillStyle = '#8b5cf6'; // Purple
-      }
-      
-      this.ctx.strokeStyle = '#ffffff';
-      this.ctx.lineWidth = 1.5;
-      this.ctx.fill();
-      this.ctx.stroke();
+      this.ctx.restore();
     }
-
-    this.ctx.restore();
-  }
 
   /**
    * Draws a glowing coordinate helper grid

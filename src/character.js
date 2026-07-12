@@ -18,7 +18,45 @@ import {
   drawLeftHandItem,
   drawHandShape,
   setOutlineThickness
-} from './parts.js?v=6';
+} from './parts.js?v=7';
+
+/** Isometric facing profile for each logical direction (0-4, pre-flip). */
+function getIsoProfile(dir) {
+  switch (dir) {
+    case 0: return { sinTilt: 0, cosTilt: 1.0, headSkew: 0, bodySkew: 0, depthScale: 1.0, faceX: 0, showFace: true };     // South (front)
+    case 1: return { sinTilt: 0.18, cosTilt: 0.98, headSkew: 0.25, bodySkew: 0.3, depthScale: 0.92, faceX: 2, showFace: true };  // SE
+    case 2: return { sinTilt: 0.0, cosTilt: 1.0, headSkew: 0.0, bodySkew: 0.0, depthScale: 0.6, faceX: 6, showFace: true };    // East (profile)
+    case 3: return { sinTilt: -0.15, cosTilt: 0.98, headSkew: -0.2, bodySkew: -0.25, depthScale: 0.88, faceX: 0, showFace: false }; // NE
+    case 4: return { sinTilt: 0, cosTilt: 1.0, headSkew: 0, bodySkew: 0, depthScale: 0.8, faceX: 0, showFace: false };    // North (back)
+    default: return { sinTilt: 0.18, cosTilt: 0.98, headSkew: 0.25, bodySkew: 0.3, depthScale: 0.92, faceX: 2, showFace: true };
+  }
+}
+
+/** Screen-space forward vector for limb stride projection per world direction. */
+function getFacingVector(direction) {
+  switch (direction) {
+    case 0: return { fx: 0, fy: 1.0 };       // South — step toward camera
+    case 1: return { fx: 0.707, fy: 0.707 }; // SE
+    case 2: return { fx: 1.0, fy: 0 };       // East — profile stride
+    case 3: return { fx: 0.707, fy: -0.707 }; // NE
+    case 4: return { fx: 0, fy: -1.0 };      // North — step away
+    case 5: return { fx: -0.707, fy: -0.707 }; // NW (mirrored at render)
+    case 6: return { fx: -1.0, fy: 0 };      // West
+    case 7: return { fx: -0.707, fy: 0.707 };  // SW
+    default: return { fx: 0, fy: 1.0 };
+  }
+}
+
+function projectLimbSwing(swingAngle, limbLength, direction, height) {
+  const facing = getFacingVector(direction);
+  const stride = swingAngle * 9 * height;
+  const fx = stride * facing.fx;
+  const fy = limbLength + stride * facing.fy;
+  return {
+    angle: Math.atan2(fx, fy),
+    length: Math.hypot(fx, fy)
+  };
+}
 
 function lightenSkin(hex, amount = 0.08) {
   const num = parseInt(hex.replace('#', ''), 16);
@@ -109,11 +147,11 @@ export class Character {
     }
   }
 
-  render(ctx, pose = getAnimationPose('idle'), options = {}) {
+  render(ctx, pose, options = {}) {
     this.lastRenderedJoints = {};
     const isFlipped = this.direction >= 5;
-    const dir = isFlipped ? 8 - this.direction : this.direction; 
-    const sign = isFlipped ? -1 : 1;
+    const dir = isFlipped ? 8 - this.direction : this.direction;
+    const iso = getIsoProfile(dir);
 
     setOutlineThickness(this.outlineThickness);
 
@@ -123,28 +161,13 @@ export class Character {
     const torsoY = pose.torsoY || 0;
     const torsoX = pose.torsoX || 0;
     const torsoAngle = pose.torsoAngle || 0;
-
-    // Unit vectors on the 30-degree isometric grid based on character facing direction:
-    let dx = 0;
-    let dy = 0;
-    switch (this.direction) {
-      case 0: dx = -0.866; dy = 0.5; break;   // South (down-left)
-      case 1: dx = 0; dy = 1.0; break;        // South-East (down)
-      case 2: dx = 0.866; dy = 0.5; break;    // East (down-right)
-      case 3: dx = 0.866; dy = -0.5; break;   // North-East (up-right)
-      case 4: dx = -0.866; dy = -0.5; break;  // North (up-left)
-      case 5: dx = -0.866; dy = -0.5; break;  // North-West (up-left)
-      case 6: dx = -0.866; dy = 0.5; break;   // West (down-left)
-      case 7: dx = -0.866; dy = 0.5; break;   // South-West (down-left)
-    }
-
-    const torsoX_screen = torsoX * dx;
-    const torsoY_screen = (torsoX * dy) + torsoY;
-
     const headAngle = pose.headAngle || 0;
     const headY = pose.headY || 0;
 
-    // Flip angles if mirrored
+    const facing = getFacingVector(this.direction);
+    const torsoX_screen = torsoX * facing.fx;
+    const torsoY_screen = (torsoX * facing.fy) + torsoY;
+
     let lArmAngle = pose.leftArmAngle || 0;
     let rArmAngle = pose.rightArmAngle || 0;
     let lLegAngle = pose.leftLegAngle || 0;
@@ -172,25 +195,24 @@ export class Character {
     const neckY = hipY - torsoHeight;
     const shoulderY = neckY + (8 * currentHeight);
 
-    // Shoulder & Hip widths change based on direction profile & build
-    let hipW = 6 * currentBuild;
-    let shoulderW = 14 * currentBuild;
-    
-    if (dir === 2) { // Profile
-      hipW = 2 * currentBuild; // keep build modifier even in profile
-      shoulderW = 2 * currentBuild;
-    } else if (dir === 1 || dir === 3) { // 3/4
-      hipW = 4 * currentBuild;
-      shoulderW = 10 * currentBuild;
-    }
+        // Shoulder & Hip widths change based on direction profile & build
+        let hipW = 6 * currentBuild * iso.depthScale;
+        let shoulderW = 14 * currentBuild * iso.depthScale;
 
-    // Isometric shoulder/hip tilt vectors (shears joints along 30-degree plane)
-    const cosTilt = 0.866;
-    const sinTilt = (dir === 3 || dir === 4) ? -0.22 : 0.22;
+        if (dir === 2 || dir === 6) {
+          hipW = 3 * currentBuild;
+          shoulderW = 3 * currentBuild;
+        } else if (dir === 1 || dir === 3 || dir === 5 || dir === 7) {
+          hipW = 5 * currentBuild;
+          shoulderW = 11 * currentBuild;
+        }
+
+        const cosTilt = iso.cosTilt;
+        const sinTilt = iso.sinTilt;
 
     if (options.drawShadow !== false) {
       ctx.save();
-      ctx.translate(torsoX_screen, torsoX * dy); // Move shadow footprint along depth axis
+      ctx.translate(torsoX_screen, torsoX * facing.fy);
       ctx.beginPath();
       const breathingScale = Math.max(0, 1 - (torsoY / 24));
       ctx.ellipse(0, 0, 24 * breathingScale * currentBuild, 6 * breathingScale, 0, 0, Math.PI * 2);
@@ -215,12 +237,9 @@ export class Character {
       if (!isFlipped) this.lastRenderedJoints.leftHip = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.rightHip = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       
-      // Calculate projected diagonal swing along walk vector (dx, dy)
-      const stride = lLegAngle * 8 * currentHeight;
-      const fx = stride * dx;
-      const fy = legLength + (stride * dy);
-      const computedLegAngle = Math.atan2(fx, fy);
-      const computedLegLength = Math.hypot(fx, fy);
+      const legProj = projectLimbSwing(lLegAngle, legLength, this.direction, currentHeight);
+      const computedLegAngle = legProj.angle;
+      const computedLegLength = legProj.length;
       
       ctx.rotate(computedLegAngle);
       
@@ -252,12 +271,9 @@ export class Character {
       if (!isFlipped) this.lastRenderedJoints.leftShoulder = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.rightShoulder = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       
-      // Calculate projected diagonal swing along walk vector (dx, dy)
-      const stride = lArmAngle * 8 * currentHeight;
-      const fx = stride * dx;
-      const fy = armLength + (stride * dy);
-      const computedArmAngle = Math.atan2(fx, fy);
-      const computedArmLength = Math.hypot(fx, fy);
+      const armProj = projectLimbSwing(lArmAngle, armLength, this.direction, currentHeight);
+      const computedArmAngle = armProj.angle;
+      const computedArmLength = armProj.length;
       
       ctx.rotate(computedArmAngle);
       
@@ -284,7 +300,7 @@ export class Character {
       ctx.rotate(torsoAngle);
       
       // Shears torso texture vertically to align with 2.5D depth profile
-      ctx.transform(1, sinTilt * 0.8, 0, 1, 0, 0);
+      ctx.transform(1, sinTilt * iso.bodySkew, 0, 1, 0, 0);
       
       this.lastRenderedJoints.hip = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       
@@ -303,12 +319,9 @@ export class Character {
       if (!isFlipped) this.lastRenderedJoints.rightHip = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.leftHip = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       
-      // Calculate projected diagonal swing along walk vector (dx, dy)
-      const stride = rLegAngle * 8 * currentHeight;
-      const fx = stride * dx;
-      const fy = legLength + (stride * dy);
-      const computedLegAngle = Math.atan2(fx, fy);
-      const computedLegLength = Math.hypot(fx, fy);
+      const legProj = projectLimbSwing(rLegAngle, legLength, this.direction, currentHeight);
+      const computedLegAngle = legProj.angle;
+      const computedLegLength = legProj.length;
       
       ctx.rotate(computedLegAngle);
       
@@ -335,11 +348,12 @@ export class Character {
       ctx.save();
       ctx.translate(torsoX_screen, hipY);
       ctx.rotate(torsoAngle);
-      ctx.translate(0, neckY - hipY); 
+      ctx.translate(0, neckY - hipY);
       ctx.rotate(headAngle);
+      ctx.translate(0, headY);
 
       // Shears head shape slightly to match isometric rotation
-      ctx.transform(1, sinTilt * 0.6, 0, 1, 0, 0);
+      ctx.transform(1, sinTilt * iso.headSkew, 0, 1, 0, 0);
 
       // Neck — no outline, blends smoothly into head and torso
       ctx.beginPath();
@@ -354,12 +368,12 @@ export class Character {
       ctx.fill();
       // No outline — blends with head above and torso below
 
-      ctx.translate(0, -26); 
+      ctx.translate(0, -18); 
       this.lastRenderedJoints.head = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       ctx.scale(0.85, 0.85);
       
-      let eyeStyleToDraw = this.eyeStyle;
-      let mouthStyleToDraw = this.mouthStyle;
+      let eyeStyleToDraw = pose.eyeStyleOverride || this.eyeStyle;
+      let mouthStyleToDraw = pose.mouthStyleOverride || this.mouthStyle;
       let blinkState = this.isBlinking;
 
       if (pose && pose.animation === 'hurt') {
@@ -374,8 +388,10 @@ export class Character {
       }
 
       drawHeadShape(ctx, this.headShape, this.skin, dir, currentBuild, this.noseSize, this.noseShape, this.gender);
-      if (dir !== 4 && dir !== 3) drawEyes(ctx, eyeStyleToDraw, this.eyeColor, blinkState, dir, this.eyeDistance, this.gender);
-      if (dir !== 4 && dir !== 3) drawMouth(ctx, mouthStyleToDraw, dir, this.mouthSize, this.mouthPos, this.gender);
+      if (iso.showFace) {
+        drawEyes(ctx, eyeStyleToDraw, this.eyeColor, blinkState, dir, this.eyeDistance, this.gender, iso.faceX);
+        drawMouth(ctx, mouthStyleToDraw, dir, this.mouthSize, this.mouthPos, this.gender, iso.faceX);
+      }
       drawHair(ctx, this.hairStyle, this.hairColor, dir);
       drawHat(ctx, this.hatStyle, this.hatColor, dir);
       ctx.restore();
@@ -390,12 +406,9 @@ export class Character {
       if (!isFlipped) this.lastRenderedJoints.rightShoulder = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.leftShoulder = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       
-      // Calculate projected diagonal swing along walk vector (dx, dy)
-      const stride = rArmAngle * 8 * currentHeight;
-      const fx = stride * dx;
-      const fy = armLength + (stride * dy);
-      const computedArmAngle = Math.atan2(fx, fy);
-      const computedArmLength = Math.hypot(fx, fy);
+      const armProj = projectLimbSwing(rArmAngle, armLength, this.direction, currentHeight);
+      const computedArmAngle = armProj.angle;
+      const computedArmLength = armProj.length;
       
       ctx.rotate(computedArmAngle);
       

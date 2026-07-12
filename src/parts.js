@@ -1,6 +1,7 @@
 /**
  * ChromaForge 2D - High-Quality Vector Parts Library
  * Smooth blended body with gradients, no outlines on body parts.
+ * Enhanced with detailed anatomy, muscle definition, fabric details, and depth.
  */
 
 let currentOutlineThickness = 3.0;
@@ -27,9 +28,24 @@ function lighten(hex, amount = 0.25) {
   return `rgb(${r},${g},${b})`;
 }
 
-/* ─── Capsule limb (arms / legs) — NO outline, gradient only ─── */
+function saturate(hex, amount = 0.1) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  let r = (num >> 16) & 0xff;
+  let g = (num >> 8) & 0xff;
+  let b = num & 0xff;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta === 0) return hex;
+  r = Math.min(255, r + delta * amount);
+  g = Math.min(255, g + delta * amount);
+  b = Math.min(255, b + delta * amount);
+  return `rgb(${r|0},${g|0},${b|0})`;
+}
 
-function drawCapsuleLimb(ctx, length, width, color) {
+/* ─── Enhanced Capsule limb (arms / legs) — NO outline, gradient with muscle definition ─── */
+
+function drawCapsuleLimb(ctx, length, width, color, detailLevel = 1) {
   if (window.isOutlinePass) return;
 
   ctx.beginPath();
@@ -39,27 +55,51 @@ function drawCapsuleLimb(ctx, length, width, color) {
   ctx.lineTo(-width, 0);
   ctx.closePath();
 
-  const grad = ctx.createLinearGradient(-width, 0, width, 0);
-  grad.addColorStop(0, lighten(color, 0.18));
-  grad.addColorStop(0.45, color);
-  grad.addColorStop(1, darken(color, 0.2));
+  // Multi-stop gradient for 3D cylindrical form with muscle definition
+  const grad = ctx.createLinearGradient(-width * 1.2, 0, width * 1.2, 0);
+  grad.addColorStop(0, lighten(color, 0.22));           // Highlight edge
+  grad.addColorStop(0.25, lighten(color, 0.08));        // Upper mid-tone
+  grad.addColorStop(0.5, color);                         // Core color
+  grad.addColorStop(0.7, darken(color, 0.12));          // Lower mid-tone
+  grad.addColorStop(1, darken(color, 0.25));            // Shadow edge
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Subtle highlight stripe for 3D depth
+  // Subtle highlight stripe for 3D depth (specular)
   ctx.beginPath();
-  ctx.arc(-width * 0.12, 0, width * 0.4, Math.PI, 0);
-  ctx.lineTo(-width * 0.12 + width * 0.4, length);
-  ctx.arc(-width * 0.12, length, width * 0.4, 0, Math.PI);
-  ctx.lineTo(-width * 0.12 - width * 0.4, 0);
+  ctx.arc(-width * 0.15, 0, width * 0.35, Math.PI, 0);
+  ctx.lineTo(-width * 0.15 + width * 0.35, length);
+  ctx.arc(-width * 0.15, length, width * 0.35, 0, Math.PI);
+  ctx.lineTo(-width * 0.15 - width * 0.35, 0);
   ctx.closePath();
-  ctx.fillStyle = `rgba(255,255,255,0.07)`;
+  ctx.fillStyle = `rgba(255,255,255,0.08)`;
   ctx.fill();
+
+  // Muscle definition lines (subtle)
+  if (detailLevel > 0.5 && length > 20) {
+    ctx.beginPath();
+    const midY = length * 0.45;
+    ctx.moveTo(-width * 0.3, midY - 3);
+    ctx.quadraticCurveTo(0, midY, width * 0.3, midY - 3);
+    ctx.strokeStyle = `rgba(255,255,255,0.04)`;
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    
+    // Lower muscle bulge (calf/bicep)
+    ctx.beginPath();
+    const lowY = length * 0.7;
+    ctx.moveTo(-width * 0.4, lowY - 2);
+    ctx.quadraticCurveTo(0, lowY + 1, width * 0.4, lowY - 2);
+    ctx.strokeStyle = `rgba(0,0,0,0.06)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
   // No outline — body parts blend together
 }
 
-/* ─── Head Shapes — NO outline on head itself ─── */
+/* ─── Head Shapes — NO outline on head itself, enhanced with detailed shading ─── */
 
 export function drawHeadShape(ctx, type, skinColor, dir = 0, build = 1.0, noseSize = 1.0, noseShape = 'normal', gender = 'male') {
   if (window.isOutlinePass) return;
@@ -67,81 +107,138 @@ export function drawHeadShape(ctx, type, skinColor, dir = 0, build = 1.0, noseSi
   const w = 22 * build;
   const h = 20;
 
+  // Direction-aware head width/height for isometric perspective
+  const dirProfile = getHeadDirProfile(dir);
+  const drawW = w * dirProfile.widthScale;
+  const drawH = h * dirProfile.heightScale;
+
   ctx.beginPath();
   const cornerR = type === 'anime' ? [4, 4, 14, 14] : (type === 'diamond' ? [8, 8, 16, 16] : 14);
-  ctx.roundRect(-w, -h, w * 2, h * 2, cornerR);
+  ctx.roundRect(-drawW, -drawH, drawW * 2, drawH * 2, cornerR);
 
-  const headGrad = ctx.createLinearGradient(0, -h, 0, h);
-  headGrad.addColorStop(0, lighten(skinColor, 0.1));
-  headGrad.addColorStop(0.5, skinColor);
-  headGrad.addColorStop(1, darken(skinColor, 0.08));
+  // Multi-stop gradient for 3D spherical form
+  const headGrad = ctx.createLinearGradient(0, -drawH, 0, drawH);
+  headGrad.addColorStop(0, lighten(skinColor, 0.15));       // Top highlight
+  headGrad.addColorStop(0.3, lighten(skinColor, 0.05));      // Upper mid
+  headGrad.addColorStop(0.5, skinColor);                      // Core
+  headGrad.addColorStop(0.7, darken(skinColor, 0.06));       // Lower mid
+  headGrad.addColorStop(1, darken(skinColor, 0.15));         // Chin shadow
   ctx.fillStyle = headGrad;
   ctx.fill();
 
-  // Subtle cheek blush
+  // Subtle cheek blush (direction-aware)
   if (dir !== 4 && dir !== 3) {
+    const blushX = dir === 2 ? -8 : (dir === 1 ? -12 : -10);
     ctx.beginPath();
-    ctx.ellipse(-10, 5, 5, 3, 0, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 130, 130, 0.12)`;
+    ctx.ellipse(blushX, 5, 6, 3.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 130, 130, 0.1)`;
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(10, 5, 5, 3, 0, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 130, 130, 0.12)`;
+    ctx.ellipse(-blushX, 5, 6, 3.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 130, 130, 0.1)`;
     ctx.fill();
   }
+
+  // Subtle forehead highlight for depth
+  ctx.beginPath();
+  ctx.ellipse(0, -drawH * 0.3, drawW * 0.4, drawH * 0.15, 0, 0, Math.PI * 2);
+  const foreheadGrad = ctx.createRadialGradient(0, -drawH * 0.3, 0, 0, -drawH * 0.3, drawW * 0.4);
+  foreheadGrad.addColorStop(0, `rgba(255,255,255,0.1)`);
+  foreheadGrad.addColorStop(1, `rgba(255,255,255,0)`);
+  ctx.fillStyle = foreheadGrad;
+  ctx.fill();
 
   // NO head outline — blends with neck
 
-  // Ears (no outline, just gradient filled)
+  // Ears (direction-aware, gradient filled with detail)
+  const earY = dir === 2 ? -2 : 0;
   if (dir === 0 || dir === 1 || dir === 7 || dir === 4) {
-    ctx.beginPath();
-    ctx.arc(-w, 0, 5, 0, Math.PI * 2);
-    ctx.fillStyle = skinColor;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(-w, 0, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = darken(skinColor, 0.08);
-    ctx.fill();
+    drawEar(ctx, -drawW, earY, skinColor, dir === 2);
   }
   if (dir === 0 || dir === 3 || dir === 1 || dir === 2 || dir === 4) {
-    ctx.beginPath();
-    ctx.arc(w, 0, 5, 0, Math.PI * 2);
-    ctx.fillStyle = skinColor;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(w, 0, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = darken(skinColor, 0.08);
-    ctx.fill();
+    drawEar(ctx, drawW, earY, skinColor, dir === 2);
   }
 
-  // Nose
+  // Nose (direction-aware with proper isometric projection)
   if (noseShape !== 'none' && dir !== 4 && dir !== 3) {
-    let faceShiftX = dir === 0 ? 2 : (dir === 2 ? w - 6 : 2);
+    let faceShiftX = dir === 0 ? 2 * dirProfile.noseDepth : (dir === 2 ? drawW - 6 : 2 * dirProfile.noseDepth);
     const nSize = 1.5 + noseSize * 0.5;
 
     if (noseShape === 'pointy') {
       ctx.beginPath();
-      ctx.moveTo(faceShiftX, 0);
+      ctx.moveTo(faceShiftX, -2);
       ctx.lineTo(faceShiftX - nSize, 4);
       ctx.lineTo(faceShiftX + nSize, 4);
       ctx.closePath();
-      ctx.fillStyle = darken(skinColor, 0.12);
+      ctx.fillStyle = darken(skinColor, 0.15);
       ctx.fill();
+      // Nose highlight
+      ctx.beginPath();
+      ctx.moveTo(faceShiftX, -1);
+      ctx.lineTo(faceShiftX - nSize * 0.5, 2);
+      ctx.strokeStyle = lighten(skinColor, 0.2);
+      ctx.lineWidth = 1;
+      ctx.stroke();
     } else if (noseShape === 'wide') {
       ctx.beginPath();
       ctx.ellipse(faceShiftX, 3, nSize * 1.5, nSize * 0.6, 0, 0, Math.PI * 2);
-      ctx.fillStyle = darken(skinColor, 0.1);
+      const noseGrad = ctx.createRadialGradient(faceShiftX, 2, 0, faceShiftX, 3, nSize * 1.5);
+      noseGrad.addColorStop(0, lighten(skinColor, 0.1));
+      noseGrad.addColorStop(1, darken(skinColor, 0.12));
+      ctx.fillStyle = noseGrad;
       ctx.fill();
     } else {
+      // Normal button nose with shading
       ctx.beginPath();
       ctx.arc(faceShiftX, 3, nSize, 0, Math.PI * 2);
-      ctx.fillStyle = darken(skinColor, 0.1);
+      const noseGrad = ctx.createRadialGradient(faceShiftX - 0.5, 2, 0.5, faceShiftX, 3, nSize);
+      noseGrad.addColorStop(0, lighten(skinColor, 0.12));
+      noseGrad.addColorStop(0.6, skinColor);
+      noseGrad.addColorStop(1, darken(skinColor, 0.15));
+      ctx.fillStyle = noseGrad;
+      ctx.fill();
+      // Nostril hint
+      ctx.beginPath();
+      ctx.arc(faceShiftX - 0.8, 3.5, nSize * 0.25, 0, Math.PI * 2);
+      ctx.fillStyle = darken(skinColor, 0.25);
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(faceShiftX - 0.5, 2, nSize * 0.4, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,0.15)`;
+      ctx.arc(faceShiftX + 0.8, 3.5, nSize * 0.25, 0, Math.PI * 2);
+      ctx.fillStyle = darken(skinColor, 0.25);
       ctx.fill();
     }
+  }
+}
+
+function drawEar(ctx, x, y, skinColor, isProfile) {
+  ctx.beginPath();
+  const earW = isProfile ? 6 : 5;
+  const earH = isProfile ? 10 : 8;
+  ctx.ellipse(x, y, earW, earH, 0, 0, Math.PI * 2);
+  const earGrad = ctx.createRadialGradient(x, y, 0, x, y, earW);
+  earGrad.addColorStop(0, lighten(skinColor, 0.05));
+  earGrad.addColorStop(0.7, skinColor);
+  earGrad.addColorStop(1, darken(skinColor, 0.1));
+  ctx.fillStyle = earGrad;
+  ctx.fill();
+  // Ear inner detail
+  ctx.beginPath();
+  ctx.ellipse(x, y, earW * 0.5, earH * 0.5, 0, 0, Math.PI * 2);
+  ctx.fillStyle = darken(skinColor, 0.12);
+  ctx.fill();
+}
+
+function getHeadDirProfile(dir) {
+  switch (dir) {
+    case 0: return { widthScale: 1.0, heightScale: 1.0, noseDepth: 1.0 };     // South
+    case 1: return { widthScale: 0.92, heightScale: 0.98, noseDepth: 0.8 };   // SE
+    case 2: return { widthScale: 0.65, heightScale: 1.0, noseDepth: 0.0 };    // East (profile)
+    case 3: return { widthScale: 0.88, heightScale: 0.95, noseDepth: 0.5 };   // NE
+    case 4: return { widthScale: 0.85, heightScale: 1.0, noseDepth: 0.0 };    // North
+    case 5: return { widthScale: 0.88, heightScale: 0.95, noseDepth: 0.5 };   // NW
+    case 6: return { widthScale: 0.65, heightScale: 1.0, noseDepth: 0.0 };    // West (profile)
+    case 7: return { widthScale: 0.92, heightScale: 0.98, noseDepth: 0.8 };   // SW
+    default: return { widthScale: 1.0, heightScale: 1.0, noseDepth: 1.0 };
   }
 }
 
@@ -557,126 +654,61 @@ export function drawHair(ctx, style, color, dir = 0) {
   }
 }
 
-/* ─── Clothing: Shirts & Torso — NO outline ─── */
+/* ─── Clothing: Shirts & Torso — NO outline, with isometric perspective and fabric details ─── */
 
 export function drawShirt(ctx, style, color, height = 1.0, build = 1.0, dir = 0, gender = 'male', bust = 0.0) {
   if (window.isOutlinePass) return;
 
+  const dirProfile = getTorsoDirProfile(dir);
   const h = 28 * height;
-  let w = 14 * build;
-  let bottomW = 14 * build;
-  if (dir === 2) { w = 9 * build; bottomW = 9 * build; }
+  let w = 14 * build * dirProfile.widthScale;
+  let bottomW = 14 * build * dirProfile.widthScale;
+  if (dir === 2 || dir === 6) { w = 9 * build; bottomW = 9 * build; }
+
+  // Apply isometric shear transform for proper perspective
+  ctx.save();
+  ctx.transform(1, dirProfile.shearY, 0, 1, 0, 0);
 
   if (style !== 'none') {
     ctx.beginPath();
     ctx.roundRect(-w, 0, w * 2, h, 8);
 
-    const tGrad = ctx.createLinearGradient(-w, 0, w, 0);
-    tGrad.addColorStop(0, lighten(color, 0.15));
-    tGrad.addColorStop(0.35, color);
-    tGrad.addColorStop(0.75, darken(color, 0.08));
-    tGrad.addColorStop(1, darken(color, 0.2));
+    // Multi-stop gradient with directional lighting for 3D form
+    const tGrad = ctx.createLinearGradient(-w * 1.2, 0, w * 1.2, 0);
+    tGrad.addColorStop(0, lighten(color, dirProfile.lightSide * 0.25));    // Lit side
+    tGrad.addColorStop(0.3, lighten(color, dirProfile.lightSide * 0.1));    // Upper mid
+    tGrad.addColorStop(0.5, color);                                          // Core
+    tGrad.addColorStop(0.7, darken(color, 0.1 + dirProfile.shadowSide * 0.1)); // Lower mid
+    tGrad.addColorStop(1, darken(color, 0.2 + dirProfile.shadowSide * 0.15));  // Shadow side
     ctx.fillStyle = tGrad;
     ctx.fill();
 
     // NO outline on torso — blends with limbs
 
-    // Clothing-specific details
-    if (style === 'armor' || style === 'plate-mail') {
-      ctx.beginPath();
-      ctx.roundRect(-w * 0.75, h * 0.15, w * 1.5, h * 0.55, 4);
-      const armGrad = ctx.createLinearGradient(-w, 0, w, 0);
-      armGrad.addColorStop(0, lighten(color, 0.25));
-      armGrad.addColorStop(0.5, lighten(color, 0.05));
-      armGrad.addColorStop(1, darken(color, 0.15));
-      ctx.fillStyle = armGrad;
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.moveTo(0, h * 0.15);
-      ctx.lineTo(0, h * 0.7);
-      ctx.strokeStyle = darken(color, 0.2);
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      if (style === 'plate-mail') {
-        ctx.beginPath();
-        ctx.roundRect(-w * 0.6, h * 0.72, w * 1.2, h * 0.2, 3);
-        ctx.fillStyle = darken(color, 0.1);
-        ctx.fill();
-      }
-    } else if (style === 'leather-armor') {
-      ctx.beginPath();
-      ctx.roundRect(-bottomW - 1, h - 8, (bottomW * 2) + 2, 6, 2);
-      ctx.fillStyle = '#5c3a1e';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.roundRect(-3, h - 9, 6, 8, 1);
-      ctx.fillStyle = '#d4a853';
-      ctx.fill();
-    } else if (style === 'ninja') {
-      ctx.beginPath();
-      ctx.roundRect(-bottomW - 1, h - 10, (bottomW * 2) + 2, 8, 2);
-      ctx.fillStyle = '#111827';
-      ctx.fill();
-    } else if (style === 'tunic') {
-      ctx.beginPath();
-      ctx.roundRect(-bottomW - 1, h - 12, (bottomW * 2) + 2, 8, 2);
-      ctx.fillStyle = darken(color, 0.3);
-      ctx.fill();
-      if (dir === 0 || dir === 1) {
-        ctx.beginPath();
-        ctx.roundRect(-4, h - 14, 8, 12, 2);
-        ctx.fillStyle = '#fbbf24';
-        ctx.fill();
-        ctx.strokeStyle = '#b45309';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    } else if (style === 'cleric-robes') {
-      ctx.beginPath();
-      ctx.roundRect(-2, h * 0.2, 4, h * 0.4, 1);
-      ctx.fillStyle = lighten(color, 0.1);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.roundRect(-6, h * 0.3, 12, 4, 1);
-      ctx.fillStyle = lighten(color, 0.1);
-      ctx.fill();
-    } else if (style === 'robe') {
-      ctx.beginPath();
-      ctx.moveTo(0, h * 0.1);
-      ctx.lineTo(0, h);
-      ctx.strokeStyle = darken(color, 0.15);
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    } else if (style === 'casual-shirt') {
-      ctx.beginPath();
-      ctx.moveTo(-w * 0.4, 0);
-      ctx.lineTo(-w * 0.1, 6);
-      ctx.lineTo(0, 3);
-      ctx.lineTo(w * 0.1, 6);
-      ctx.lineTo(w * 0.4, 0);
-      ctx.strokeStyle = darken(color, 0.2);
-      ctx.lineWidth = 1.5;
-      ctx.lineCap = 'round';
-      ctx.stroke();
-    }
-
-    // Fabric fold highlights
+    // Directional highlight for cylindrical form
+    const highlightX = w * dirProfile.highlightOffset;
     ctx.beginPath();
-    ctx.moveTo(-w * 0.6, h * 0.1);
-    ctx.quadraticCurveTo(-w * 0.3, h * 0.35, -w * 0.5, h * 0.6);
-    ctx.strokeStyle = `rgba(255,255,255,0.06)`;
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    ctx.arc(highlightX, 0, w * 0.25, Math.PI * 0.5, Math.PI * 1.5);
+    ctx.lineTo(highlightX, h);
+    ctx.arc(highlightX, h, w * 0.25, Math.PI * 1.5, Math.PI * 0.5);
+    ctx.lineTo(highlightX, 0);
+    ctx.closePath();
+    ctx.fillStyle = `rgba(255,255,255,${0.05 * dirProfile.highlightIntensity})`;
+    ctx.fill();
+
+    // Clothing-specific details with proper perspective
+    drawClothingDetails(ctx, style, color, w, h, bottomW, dir, dirProfile);
+
+    // Fabric fold highlights (subtle, direction-aware)
+    drawFabricFolds(ctx, w, h, dir, dirProfile, color);
   } else {
-    // Bare chest — NO outline
+    // Bare chest — NO outline, with anatomical shading
     ctx.beginPath();
     ctx.roundRect(-w, 0, w * 2, h, 8);
-    const skinGrad = ctx.createLinearGradient(-w, 0, w, 0);
-    skinGrad.addColorStop(0, lighten(color, 0.06));
+    const skinGrad = ctx.createLinearGradient(-w * 1.2, 0, w * 1.2, 0);
+    skinGrad.addColorStop(0, lighten(color, dirProfile.lightSide * 0.15));
     skinGrad.addColorStop(0.5, color);
-    skinGrad.addColorStop(1, darken(color, 0.08));
+    skinGrad.addColorStop(1, darken(color, 0.1 + dirProfile.shadowSide * 0.1));
     ctx.fillStyle = skinGrad;
     ctx.fill();
 
@@ -686,47 +718,349 @@ export function drawShirt(ctx, style, color, height = 1.0, build = 1.0, dir = 0,
       ctx.fillStyle = '#1f2937';
       ctx.fill();
     }
+
+    // Pectoral/ab definition for bare chest
+    if (gender === 'male') {
+      drawMuscleDefinition(ctx, w, h, color, dirProfile);
+    }
   }
 
-  // Bust (female) — no outline
-  if (gender === 'female' && bust > 0 && dir !== 4 && dir !== 3 && style !== 'armor') {
+  // Bust (female) — no outline, with proper perspective
+  if (gender === 'female' && bust > 0 && dir !== 4 && dir !== 3 && style !== 'armor' && style !== 'plate-mail') {
     const bSize = 6 + (bust * 4);
     const yOff = 16;
     const c = style === 'none' ? '#1f2937' : color;
-    if (dir === 2) {
+    drawBust(ctx, w, yOff, bSize, c, dir, dirProfile);
+  }
+
+  ctx.restore();
+}
+
+function getTorsoDirProfile(dir) {
+  switch (dir) {
+    case 0: return { widthScale: 1.0, shearY: 0, lightSide: 1.0, shadowSide: 0, highlightOffset: -0.3, highlightIntensity: 1.0 };   // South (front)
+    case 1: return { widthScale: 0.92, shearY: 0.15, lightSide: 0.8, shadowSide: 0.4, highlightOffset: -0.2, highlightIntensity: 0.8 }; // SE
+    case 2: return { widthScale: 0.65, shearY: 0, lightSide: 0.0, shadowSide: 1.0, highlightOffset: 0.0, highlightIntensity: 0.0 };     // East (profile)
+    case 3: return { widthScale: 0.88, shearY: -0.1, lightSide: 0.4, shadowSide: 0.8, highlightOffset: 0.2, highlightIntensity: 0.5 };  // NE
+    case 4: return { widthScale: 0.85, shearY: 0, lightSide: 0.0, shadowSide: 1.0, highlightOffset: 0.0, highlightIntensity: 0.0 };     // North (back)
+    case 5: return { widthScale: 0.88, shearY: 0.1, lightSide: 0.4, shadowSide: 0.8, highlightOffset: -0.2, highlightIntensity: 0.5 }; // NW
+    case 6: return { widthScale: 0.65, shearY: 0, lightSide: 0.0, shadowSide: 1.0, highlightOffset: 0.0, highlightIntensity: 0.0 };     // West (profile)
+    case 7: return { widthScale: 0.92, shearY: -0.15, lightSide: 0.8, shadowSide: 0.4, highlightOffset: 0.2, highlightIntensity: 0.8 }; // SW
+    default: return { widthScale: 1.0, shearY: 0, lightSide: 1.0, shadowSide: 0, highlightOffset: -0.3, highlightIntensity: 1.0 };
+  }
+}
+
+function drawClothingDetails(ctx, style, color, w, h, bottomW, dir, dirProfile) {
+  if (style === 'armor' || style === 'plate-mail') {
+    // Breastplate with perspective
+    ctx.beginPath();
+    ctx.roundRect(-w * 0.75, h * 0.15, w * 1.5, h * 0.55, 4);
+    const armGrad = ctx.createLinearGradient(-w, 0, w, 0);
+    armGrad.addColorStop(0, lighten(color, 0.3));
+    armGrad.addColorStop(0.5, lighten(color, 0.1));
+    armGrad.addColorStop(1, darken(color, 0.2));
+    ctx.fillStyle = armGrad;
+    ctx.fill();
+
+    // Center line with perspective
+    ctx.beginPath();
+    ctx.moveTo(0, h * 0.15);
+    ctx.lineTo(0, h * 0.7);
+    ctx.strokeStyle = darken(color, 0.3);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Rivets/studs
+    for (let i = 1; i <= 3; i++) {
+      const ry = h * 0.2 + i * (h * 0.15);
       ctx.beginPath();
-      ctx.arc(w, yOff, bSize, 0, Math.PI * 2);
-      const bg = ctx.createRadialGradient(w - 2, yOff - 2, 1, w, yOff, bSize);
-      bg.addColorStop(0, lighten(c, 0.15));
-      bg.addColorStop(1, darken(c, 0.1));
-      ctx.fillStyle = bg;
+      ctx.arc(-w * 0.5, ry, 2, 0, Math.PI * 2);
+      ctx.fillStyle = darken(color, 0.3);
       ctx.fill();
-    } else {
-      const shift = dir === 1 ? 4 : 0;
-      for (const sx of [-w * 0.4 + shift, w * 0.4 + shift]) {
+      ctx.beginPath();
+      ctx.arc(w * 0.5, ry, 2, 0, Math.PI * 2);
+      ctx.fillStyle = darken(color, 0.3);
+      ctx.fill();
+    }
+
+    if (style === 'plate-mail') {
+      ctx.beginPath();
+      ctx.roundRect(-w * 0.6, h * 0.72, w * 1.2, h * 0.2, 3);
+      ctx.fillStyle = darken(color, 0.1);
+      ctx.fill();
+      // Tasset details
+      ctx.beginPath();
+      for (let i = -2; i <= 2; i++) {
+        ctx.moveTo(i * w * 0.2, h * 0.72);
+        ctx.lineTo(i * w * 0.2, h * 0.92);
+      }
+      ctx.strokeStyle = darken(color, 0.3);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  } else if (style === 'leather-armor') {
+    // Leather straps and belt
+    ctx.beginPath();
+    ctx.roundRect(-bottomW - 1, h - 8, (bottomW * 2) + 2, 6, 2);
+    const beltGrad = ctx.createLinearGradient(-bottomW, h - 8, bottomW, h - 2);
+    beltGrad.addColorStop(0, '#4a2c1a');
+    beltGrad.addColorStop(0.5, '#5c3a1e');
+    beltGrad.addColorStop(1, '#4a2c1a');
+    ctx.fillStyle = beltGrad;
+    ctx.fill();
+
+    // Belt buckle
+    ctx.beginPath();
+    ctx.roundRect(-3, h - 9, 6, 8, 1);
+    const buckleGrad = ctx.createLinearGradient(-3, h - 9, 3, h - 1);
+    buckleGrad.addColorStop(0, '#fde68a');
+    buckleGrad.addColorStop(0.5, '#d4a853');
+    buckleGrad.addColorStop(1, '#b45309');
+    ctx.fillStyle = buckleGrad;
+    ctx.fill();
+    ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  } else if (style === 'ninja') {
+    // Sash/belt
+    ctx.beginPath();
+    ctx.roundRect(-bottomW - 1, h - 10, (bottomW * 2) + 2, 8, 2);
+    const sashGrad = ctx.createLinearGradient(-bottomW, h - 10, bottomW, h - 2);
+    sashGrad.addColorStop(0, '#0f172a');
+    sashGrad.addColorStop(0.5, '#1e293b');
+    sashGrad.addColorStop(1, '#0f172a');
+    ctx.fillStyle = sashGrad;
+    ctx.fill();
+    // Knot detail
+    ctx.beginPath();
+    ctx.ellipse(0, h - 6, 5, 3, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#334155';
+    ctx.fill();
+  } else if (style === 'tunic') {
+    // Hem detail
+    ctx.beginPath();
+    ctx.roundRect(-bottomW - 1, h - 12, (bottomW * 2) + 2, 8, 2);
+    const hemGrad = ctx.createLinearGradient(-bottomW, h - 12, bottomW, h - 4);
+    hemGrad.addColorStop(0, darken(color, 0.4));
+    hemGrad.addColorStop(0.5, darken(color, 0.3));
+    hemGrad.addColorStop(1, darken(color, 0.4));
+    ctx.fillStyle = hemGrad;
+    ctx.fill();
+
+    if (dir === 0 || dir === 1 || dir === 7) {
+      // Front lacing
+      ctx.beginPath();
+      ctx.roundRect(-4, h - 14, 8, 12, 2);
+      const laceGrad = ctx.createLinearGradient(-4, h - 14, 4, h - 2);
+      laceGrad.addColorStop(0, '#fef3c7');
+      laceGrad.addColorStop(0.5, '#fbbf24');
+      laceGrad.addColorStop(1, '#f59e0b');
+      ctx.fillStyle = laceGrad;
+      ctx.fill();
+      ctx.strokeStyle = '#b45309';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Lace holes
+      for (let i = 1; i <= 4; i++) {
+        const ly = h - 13 + i * 2.5;
         ctx.beginPath();
-        ctx.arc(sx, yOff, bSize, 0, Math.PI * 2);
-        const bg = ctx.createRadialGradient(sx - 2, yOff - 2, 1, sx, yOff, bSize);
-        bg.addColorStop(0, lighten(c, 0.15));
-        bg.addColorStop(1, darken(c, 0.1));
-        ctx.fillStyle = bg;
+        ctx.arc(-2, ly, 1, 0, Math.PI * 2);
+        ctx.fillStyle = '#78350f';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(2, ly, 1, 0, Math.PI * 2);
+        ctx.fillStyle = '#78350f';
         ctx.fill();
       }
     }
+  } else if (style === 'cleric-robes') {
+    // Robe details - vertical drape lines
+    ctx.beginPath();
+    ctx.roundRect(-2, h * 0.2, 4, h * 0.4, 1);
+    ctx.fillStyle = lighten(color, 0.15);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.roundRect(-6, h * 0.3, 12, 4, 1);
+    ctx.fillStyle = lighten(color, 0.1);
+    ctx.fill();
+    // Symbol
+    ctx.beginPath();
+    ctx.moveTo(0, h * 0.35);
+    ctx.lineTo(0, h * 0.55);
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-4, h * 0.45);
+    ctx.lineTo(4, h * 0.45);
+    ctx.stroke();
+  } else if (style === 'robe') {
+    // Vertical seam line with subtle shading
+    ctx.beginPath();
+    ctx.moveTo(0, h * 0.1);
+    ctx.lineTo(0, h);
+    const seamGrad = ctx.createLinearGradient(0, h * 0.1, 0, h);
+    seamGrad.addColorStop(0, `rgba(0,0,0,0.1)`);
+    seamGrad.addColorStop(0.5, `rgba(0,0,0,0.05)`);
+    seamGrad.addColorStop(1, `rgba(0,0,0,0.15)`);
+    ctx.strokeStyle = seamGrad;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else if (style === 'casual-shirt') {
+    // Collar and placket
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.4, 0);
+    ctx.lineTo(-w * 0.1, 6);
+    ctx.lineTo(0, 3);
+    ctx.lineTo(w * 0.1, 6);
+    ctx.lineTo(w * 0.4, 0);
+    ctx.strokeStyle = darken(color, 0.25);
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // Placket
+    ctx.beginPath();
+    ctx.moveTo(0, 3);
+    ctx.lineTo(0, h * 0.3);
+    ctx.strokeStyle = darken(color, 0.15);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Buttons
+    for (let i = 1; i <= 3; i++) {
+      const by = 6 + i * 6;
+      ctx.beginPath();
+      ctx.arc(0, by, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = lighten(color, 0.2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawFabricFolds(ctx, w, h, dir, dirProfile, color) {
+  // Subtle fabric fold lines that follow the body's perspective
+  const foldCount = dir === 2 || dir === 6 ? 1 : 2;
+
+  for (let i = 0; i < foldCount; i++) {
+    const side = i === 0 ? -1 : 1;
+    const xStart = side * w * (dir === 2 || dir === 6 ? 0.2 : 0.6);
+    const xControl = side * w * (dir === 2 || dir === 6 ? 0.0 : 0.3);
+    const xEnd = side * w * 0.5;
+    const yStart = h * 0.1;
+    const yControl = h * 0.35;
+    const yEnd = h * 0.6;
+
+    ctx.beginPath();
+    ctx.moveTo(xStart, yStart);
+    ctx.quadraticCurveTo(xControl, yControl, xEnd, yEnd);
+    ctx.strokeStyle = `rgba(255,255,255,${0.05 * dirProfile.highlightIntensity})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Shadow fold on opposite side
+    ctx.beginPath();
+    ctx.moveTo(-xStart * 0.8, yStart);
+    ctx.quadraticCurveTo(-xControl * 0.5, yControl, -xEnd * 0.8, yEnd);
+    ctx.strokeStyle = `rgba(0,0,0,${0.04 * dirProfile.shadowSide})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function drawMuscleDefinition(ctx, w, h, skinColor, dirProfile) {
+  if (dirProfile.highlightIntensity === 0) return; // No muscle def in profile/back view
+
+  // Pectorals
+  ctx.beginPath();
+  ctx.ellipse(-w * 0.3, h * 0.22, w * 0.25, h * 0.12, -0.2, 0, Math.PI * 2);
+  const pecGrad = ctx.createRadialGradient(-w * 0.3, h * 0.2, 0, -w * 0.3, h * 0.22, w * 0.25);
+  pecGrad.addColorStop(0, lighten(skinColor, 0.1));
+  pecGrad.addColorStop(1, `rgba(0,0,0,0)`);
+  ctx.fillStyle = pecGrad;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.ellipse(w * 0.3, h * 0.22, w * 0.25, h * 0.12, 0.2, 0, Math.PI * 2);
+  const pecGrad2 = ctx.createRadialGradient(w * 0.3, h * 0.2, 0, w * 0.3, h * 0.22, w * 0.25);
+  pecGrad2.addColorStop(0, lighten(skinColor, 0.1));
+  pecGrad2.addColorStop(1, `rgba(0,0,0,0)`);
+  ctx.fillStyle = pecGrad2;
+  ctx.fill();
+
+  // Abs (subtle)
+  for (let i = 0; i < 3; i++) {
+    const ay = h * 0.45 + i * h * 0.1;
+    ctx.beginPath();
+    ctx.roundRect(-w * 0.15, ay, w * 0.3, h * 0.08, 1);
+    const abGrad = ctx.createLinearGradient(-w * 0.15, ay, w * 0.15, ay);
+    abGrad.addColorStop(0, `rgba(0,0,0,0.04)`);
+    abGrad.addColorStop(0.5, `rgba(255,255,255,0.02)`);
+    abGrad.addColorStop(1, `rgba(0,0,0,0.04)`);
+    ctx.fillStyle = abGrad;
+    ctx.fill();
+  }
+}
+
+function drawBust(ctx, w, yOff, bSize, color, dir, dirProfile) {
+  const shift = dir === 1 ? 3 : (dir === 7 ? -3 : 0);
+  const count = dir === 2 || dir === 6 ? 1 : 2;
+  const positions = count === 1 ? [0] : [-w * 0.4 + shift, w * 0.4 + shift];
+
+  for (const sx of positions) {
+    ctx.beginPath();
+    ctx.arc(sx, yOff, bSize, 0, Math.PI * 2);
+    const bg = ctx.createRadialGradient(sx - 2, yOff - 2, 1, sx, yOff, bSize);
+    bg.addColorStop(0, lighten(color, 0.2));
+    bg.addColorStop(0.5, color);
+    bg.addColorStop(1, darken(color, 0.15));
+    ctx.fillStyle = bg;
+    ctx.fill();
+
+    // Subtle highlight for roundness
+    ctx.beginPath();
+    ctx.arc(sx - 2, yOff - 3, bSize * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,0.1)`;
+    ctx.fill();
   }
 }
 
 export function drawSleeve(ctx, style, color, length = 24, dir = 0, build = 1.0) {
   if (style === 'none' || window.isOutlinePass) return;
-  const w = 5.5 * build;
-  drawCapsuleLimb(ctx, length, w, color);
+  const dirProfile = getLimbDirProfile(dir);
+  const w = 5.5 * build * dirProfile.widthScale;
+
+  ctx.save();
+  // Apply perspective shear for the limb
+  ctx.transform(1, dirProfile.shearY, 0, 1, 0, 0);
+  drawCapsuleLimb(ctx, length, w, color, dirProfile.detailLevel);
+  ctx.restore();
 }
 
 export function drawPants(ctx, style, color, legLength = 26, dir = 0, build = 1.0) {
   if (window.isOutlinePass) return;
-  const w = 6 * build;
+  const dirProfile = getLimbDirProfile(dir);
+  const w = 6 * build * dirProfile.widthScale;
   if (style === 'shorts') legLength *= 0.6;
-  drawCapsuleLimb(ctx, legLength, w, color);
+
+  ctx.save();
+  ctx.transform(1, dirProfile.shearY, 0, 1, 0, 0);
+  drawCapsuleLimb(ctx, legLength, w, color, dirProfile.detailLevel);
+  ctx.restore();
+}
+
+function getLimbDirProfile(dir) {
+  switch (dir) {
+    case 0: return { widthScale: 1.0, shearY: 0, detailLevel: 1.0 };       // South
+    case 1: return { widthScale: 0.9, shearY: 0.2, detailLevel: 0.8 };     // SE
+    case 2: return { widthScale: 0.6, shearY: 0, detailLevel: 0.5 };       // East (profile)
+    case 3: return { widthScale: 0.85, shearY: -0.15, detailLevel: 0.7 };  // NE
+    case 4: return { widthScale: 0.85, shearY: 0, detailLevel: 0.5 };      // North
+    case 5: return { widthScale: 0.85, shearY: 0.15, detailLevel: 0.7 };   // NW
+    case 6: return { widthScale: 0.6, shearY: 0, detailLevel: 0.5 };       // West (profile)
+    case 7: return { widthScale: 0.9, shearY: -0.2, detailLevel: 0.8 };    // SW
+    default: return { widthScale: 1.0, shearY: 0, detailLevel: 1.0 };
+  }
 }
 
 /* ─── Shoes — direction-aware, smooth ankle blend ─── */
@@ -1079,7 +1413,7 @@ export function drawCape(ctx, style, color, waveAngle = 0, dir = 0) {
 export function drawWeapon(ctx, style, color, swingAngle = 0, dir = 0) {
   if (style === 'none' || window.isOutlinePass) return;
   ctx.save();
-  ctx.rotate(swingAngle);
+  ctx.rotate(-Math.PI / 4 + swingAngle);
 
   if (style === 'sword') {
     ctx.beginPath();

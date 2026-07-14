@@ -573,6 +573,7 @@
               <select id="select-attack-style">
                 <option value="melee">Melee</option>
                 <option value="ranged">Ranged</option>
+                <option value="archer">Archer</option>
               </select>
             </div>
 
@@ -638,6 +639,10 @@
             <label for="check-include-shadow">Include Shadow</label>
           </div>
           <div class="checkbox-group">
+            <input type="checkbox" id="check-bake-arrow" checked>
+            <label for="check-bake-arrow" title="Uncheck to leave the arrow out of the sprites. Its position and angle are still exported per frame in the metadata JSON, so your game can draw its own arrow.">Bake Arrow Into Sprites</label>
+          </div>
+          <div class="checkbox-group">
             <input type="checkbox" id="check-export-atlas">
             <label for="check-export-atlas">Export LibGDX Atlas</label>
           </div>
@@ -687,6 +692,6 @@
   </div>
 
   <!-- Loading scripts as ES modules -->
-  <script type="module" src="src/app.js?v=7"></script>
+  <script type="module" src="src/app.js?v=24"></script>
 </body>
 </html>

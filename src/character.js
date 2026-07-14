@@ -17,8 +17,21 @@ import {
   drawWeapon,
   drawLeftHandItem,
   drawHandShape,
+  drawJointBlend,
+  getLimbWidth,
+  getBowArrowGeometry,
   setOutlineThickness
-} from './parts.js?v=7';
+} from './parts.js?v=10';
+import { LIMB_PROPORTIONS, getLimbSegments, solveTwoBoneIK } from './skeleton.js?v=1';
+
+// Knee bend direction for the leg IK solver. +1/-1 controls which way the knee folds;
+// flip this if the skeleton overlay shows knees bending backwards.
+const LEG_BEND_DIR = 1;
+
+// Elbow bend direction for the archer off-hand IK solver (see leftHandOverrideTarget
+// in render()). -1 drops the elbow below the string line, the way a drawing arm actually
+// folds; +1 cocks it up over the arrow.
+const LEFT_ARM_BEND_DIR = -1;
 
 /** Isometric facing profile for each logical direction (0-4, pre-flip). */
 function getIsoProfile(dir) {
@@ -32,29 +45,43 @@ function getIsoProfile(dir) {
   }
 }
 
-/** Screen-space forward vector for limb stride projection per world direction. */
+/**
+ * Screen-space forward vector for limb stride projection per world direction, in the
+ * LOCAL (pre-flip) frame. Directions 5-7 (NW/W/SW) intentionally return the same vector
+ * as their mirror-source directions 3/1/2 rather than a separately negated one — the
+ * horizontal mirroring itself is applied once, at render time, via ctx.scale(-1, 1).
+ * Baking an extra sign flip in here would double-cancel it (this used to happen and
+ * broke direction-dependent horizontal offsets like the attack lunge, though it went
+ * unnoticed in symmetric cyclic animations like walk/run/idle).
+ */
 function getFacingVector(direction) {
-  switch (direction) {
+  const isFlipped = direction >= 5;
+  const dir = isFlipped ? 8 - direction : direction;
+  switch (dir) {
     case 0: return { fx: 0, fy: 1.0 };       // South — step toward camera
-    case 1: return { fx: 0.707, fy: 0.707 }; // SE
-    case 2: return { fx: 1.0, fy: 0 };       // East — profile stride
-    case 3: return { fx: 0.707, fy: -0.707 }; // NE
+    case 1: return { fx: 0.707, fy: 0.707 }; // SE / (NW mirrored)
+    case 2: return { fx: 1.0, fy: 0 };       // East — profile stride / (West mirrored)
+    case 3: return { fx: 0.707, fy: -0.707 }; // NE / (SW mirrored)
     case 4: return { fx: 0, fy: -1.0 };      // North — step away
-    case 5: return { fx: -0.707, fy: -0.707 }; // NW (mirrored at render)
-    case 6: return { fx: -1.0, fy: 0 };      // West
-    case 7: return { fx: -0.707, fy: 0.707 };  // SW
     default: return { fx: 0, fy: 1.0 };
   }
 }
 
-function projectLimbSwing(swingAngle, limbLength, direction, height) {
+/** Stride-projected end-effector target, in the limb root's local unrotated frame. */
+function getStrideTarget(swingAngle, limbLength, direction, height) {
   const facing = getFacingVector(direction);
   const stride = swingAngle * 9 * height;
-  const fx = stride * facing.fx;
-  const fy = limbLength + stride * facing.fy;
   return {
-    angle: Math.atan2(fx, fy),
-    length: Math.hypot(fx, fy)
+    x: stride * facing.fx,
+    y: limbLength + stride * facing.fy
+  };
+}
+
+function projectLimbSwing(swingAngle, limbLength, direction, height) {
+  const t = getStrideTarget(swingAngle, limbLength, direction, height);
+  return {
+    angle: Math.atan2(t.x, t.y),
+    length: Math.hypot(t.x, t.y)
   };
 }
 
@@ -130,6 +157,12 @@ export class Character {
     
     // Store exact pixel coordinates of joints from the last render pass
     this.lastRenderedJoints = {};
+
+    // Exact pixel coordinates of non-joint attachment points from the last render pass —
+    // things a game engine hangs its own sprites on rather than reading out of the sheet.
+    // Currently just `arrow` (present only while a bow is drawn). Same canvas space as
+    // lastRenderedJoints; exporter.js rebases both into frame-local coords.
+    this.lastRenderedAttachments = {};
   }
 
   update(deltaTime) {
@@ -149,6 +182,11 @@ export class Character {
 
   render(ctx, pose, options = {}) {
     this.lastRenderedJoints = {};
+    this.lastRenderedAttachments = {};
+
+    // options.drawArrow === false omits the arrow's pixels but still records its attachment
+    // point, so a game can render its own arrow sprite (flaming, poison, none) at runtime.
+    const drawArrow = options.drawArrow !== false;
     const isFlipped = this.direction >= 5;
     const dir = isFlipped ? 8 - this.direction : this.direction;
     const iso = getIsoProfile(dir);
@@ -210,6 +248,100 @@ export class Character {
         const cosTilt = iso.cosTilt;
         const sinTilt = iso.sinTilt;
 
+    // Archer-style off-hand coupling: when the pose specifies a draw amount, the left
+    // (string) hand IK-targets a point that interpolates between "at the bow" (the
+    // right/weapon hand's own resolved position) and "pulled back to the chest anchor",
+    // instead of using a hand-authored angle. This keeps the string hand geometrically
+    // anchored to the weapon hand regardless of how the weapon arm itself is posed.
+    //
+    // Sign convention: a limb rotated by angle `a` renders its tip at SCREEN offset
+    // (-len * sin a, len * cos a), so a solveTwoBoneIK target (tx, ty) resolves to the
+    // screen point (-tx, ty) — the solver's X axis runs opposite to the screen's. The
+    // target below is built in screen space and negated in X on the way in; feeding it
+    // raw is what mirrored the string hand onto the wrong side of the body.
+    const { upper: sharedUpperArmLen, lower: sharedForearmLen } = getLimbSegments(armLength, LIMB_PROPORTIONS.upperArmRatio, LIMB_PROPORTIONS.forearmRatio);
+
+    // pose.rightArmScreenAngle is already a screen-space shoulder rotation and is used as-is;
+    // pose.rightArmAngle is a stride-like swing and goes through the facing projection, which
+    // zeroes its horizontal component for South/North. See the note in animations.js.
+    const rightShoulderAngle = pose.rightArmScreenAngle !== undefined
+      ? pose.rightArmScreenAngle
+      : projectLimbSwing(rArmAngle, armLength, this.direction, currentHeight).angle;
+
+    const rightElbowAngle = pose.rightElbowAngle || 0;
+
+    // The weapon is drawn in the hand's frame, so it inherits the whole arm's rotation, on
+    // top of the fixed -45° blade tilt drawWeapon bakes in. That tilt is right for a blade
+    // but makes an aimed bow flop over as the arm rises, so for a bow draw specifically we
+    // cancel both out: the bow then stays upright and pose.weaponSwing reads as a tilt
+    // relative to upright (0 = vertical bow, string toward the body, limbs up/down). A blade
+    // keeps its inherited rotation — that IS the swing.
+    const isBowDraw = pose.drawAmount !== undefined && this.weaponStyle === 'bow';
+    const weaponSwing_arm = isBowDraw
+      ? weaponSwing - (rightShoulderAngle + rightElbowAngle) + Math.PI / 4
+      : weaponSwing;
+
+    let leftHandOverrideTarget = null;
+    let bowNock = null;
+    if (pose.drawAmount !== undefined) {
+      const totalRightAngle = rightShoulderAngle + rightElbowAngle;
+
+      // Weapon hand, as a screen offset from the right shoulder.
+      const rightHandX = -sharedUpperArmLen * Math.sin(rightShoulderAngle) - sharedForearmLen * Math.sin(totalRightAngle);
+      const rightHandY = sharedUpperArmLen * Math.cos(rightShoulderAngle) + sharedForearmLen * Math.cos(totalRightAngle);
+
+      // Same point, re-expressed as a screen offset from the LEFT shoulder: the shoulders
+      // are symmetric ±shoulderW offsets from the torso centerline along the tilt axis,
+      // so the right one sits 2*shoulderW away from the left one.
+      const nockX = rightHandX + 2 * shoulderW * cosTilt;
+      const nockY = rightHandY + 2 * shoulderW * sinTilt;
+
+      // Full draw: string hand pulled back to the chest anchor — just inboard of the torso
+      // centerline at collarbone height, which is the deepest a 16px arm can pull and still
+      // clear the body silhouette. (A real archer anchors at the jaw, but the head on this
+      // chibi is wide enough that the hand would vanish behind it.) Shoulders are wider
+      // apart (2*shoulderW) than an arm is long, so the nock end of this lerp is out of
+      // reach and the solver clamps it to a fully extended arm pointing at the bow — that
+      // is the intended "reaching for the string" read at drawAmount 0.
+      const anchorX = shoulderW * cosTilt * 0.85;
+      const anchorY = shoulderW * sinTilt + armLength * 0.12;
+
+      const drawAmt = Math.max(0, pose.drawAmount);
+      leftHandOverrideTarget = {
+        x: -(nockX + (anchorX - nockX) * drawAmt),
+        y: nockY + (anchorY - nockY) * drawAmt
+      };
+
+      // Where the string hand ACTUALLY lands (the solver clamps the target to arm reach),
+      // so the bowstring can be drawn bent onto it. Resolve the same IK the left arm layer
+      // will run, then re-express the result in the bow's own frame: the bow ends up
+      // rotated by exactly (arm rotation + weapon swing) relative to screen, and the
+      // counter-rotation above collapses that to plain `weaponSwing`.
+      const ik = solveTwoBoneIK(leftHandOverrideTarget.x, leftHandOverrideTarget.y, sharedUpperArmLen, sharedForearmLen, LEFT_ARM_BEND_DIR);
+      const ikTotal = ik.angle1 + ik.angle2;
+      const stringHandX = -sharedUpperArmLen * Math.sin(ik.angle1) - sharedForearmLen * Math.sin(ikTotal);
+      const stringHandY = sharedUpperArmLen * Math.cos(ik.angle1) + sharedForearmLen * Math.cos(ikTotal);
+
+      // Screen delta from the weapon hand (bow grip) to the string hand.
+      const dx = (stringHandX - 2 * shoulderW * cosTilt) - rightHandX;
+      const dy = (stringHandY - 2 * shoulderW * sinTilt) - rightHandY;
+
+      const bowTilt = weaponSwing; // total on-screen rotation of the bow, post-counter-rotation
+      const pulledX = dx * Math.cos(bowTilt) + dy * Math.sin(bowTilt);
+      const pulledY = -dx * Math.sin(bowTilt) + dy * Math.cos(bowTilt);
+
+      // Blend the string back onto its resting line as the draw slackens. At drawAmount 0
+      // the string hand is reaching for a nock it cannot physically touch (see above), so
+      // taking its position literally would hang the string off the hand and cock the arrow
+      // at the floor; the string should just be at rest instead.
+      const pull = Math.min(1, drawAmt);
+      const REST_STRING_X = -2;
+      bowNock = {
+        x: REST_STRING_X + (pulledX - REST_STRING_X) * pull,
+        y: pulledY * pull
+      };
+    }
+
     if (options.drawShadow !== false) {
       ctx.save();
       ctx.translate(torsoX_screen, torsoX * facing.fy);
@@ -233,31 +365,45 @@ export class Character {
     const drawLeftLegLayer = () => {
       ctx.save();
       ctx.translate(torsoX_screen - hipW * cosTilt, hipY - hipW * sinTilt);
-      
+
       if (!isFlipped) this.lastRenderedJoints.leftHip = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.rightHip = { x: ctx.getTransform().e, y: ctx.getTransform().f };
-      
-      const legProj = projectLimbSwing(lLegAngle, legLength, this.direction, currentHeight);
-      const computedLegAngle = legProj.angle;
-      const computedLegLength = legProj.length;
-      
-      ctx.rotate(computedLegAngle);
-      
-      // Draw bare leg first
-      drawPants(ctx, 'trousers', this.skin, computedLegLength, dir, currentBuild);
+
+      const footTarget = getStrideTarget(lLegAngle, legLength, this.direction, currentHeight);
+      const { upper: thighLen, lower: shinLen } = getLimbSegments(legLength, LIMB_PROPORTIONS.thighRatio, LIMB_PROPORTIONS.shinRatio);
+      const { angle1: hipAngle, angle2: kneeAngle } = solveTwoBoneIK(footTarget.x, footTarget.y, thighLen, shinLen, LEG_BEND_DIR);
+
+      ctx.rotate(hipAngle);
+
+      // Draw bare thigh first
+      drawPants(ctx, 'trousers', this.skin, thighLen, dir, currentBuild);
       // Draw clothing
-      if (this.pantsStyle !== 'none') drawPants(ctx, this.pantsStyle, this.pantsColor, computedLegLength, dir, currentBuild);
-      
-      ctx.translate(0, computedLegLength);
-      
+      if (this.pantsStyle !== 'none') drawPants(ctx, this.pantsStyle, this.pantsColor, thighLen, dir, currentBuild);
+
+      ctx.translate(0, thighLen);
+
+      if (!isFlipped) this.lastRenderedJoints.leftKnee = { x: ctx.getTransform().e, y: ctx.getTransform().f };
+      else this.lastRenderedJoints.rightKnee = { x: ctx.getTransform().e, y: ctx.getTransform().f };
+
+      drawJointBlend(ctx, getLimbWidth('leg', dir, currentBuild), this.pantsStyle !== 'none' ? this.pantsColor : this.skin);
+
+      ctx.rotate(kneeAngle);
+
+      // Draw bare shin first
+      drawPants(ctx, 'trousers', this.skin, shinLen, dir, currentBuild, 0.85);
+      // Draw clothing
+      if (this.pantsStyle !== 'none') drawPants(ctx, this.pantsStyle, this.pantsColor, shinLen, dir, currentBuild, 0.85);
+
+      ctx.translate(0, shinLen);
+
       // Apply foot rotation from pose animation
       if (pose) {
         ctx.rotate(isFlipped ? pose.rightFootAngle : pose.leftFootAngle);
       }
-      
+
       if (!isFlipped) this.lastRenderedJoints.leftFoot = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.rightFoot = { x: ctx.getTransform().e, y: ctx.getTransform().f };
-      
+
       drawShoe(ctx, this.shoesStyle, this.shoesColor, dir, true);
       ctx.restore();
     };
@@ -265,29 +411,50 @@ export class Character {
     const drawLeftArmLayer = () => {
       ctx.save();
       ctx.translate(torsoX_screen, hipY);
-      ctx.rotate(torsoAngle); 
-      ctx.translate(-shoulderW * cosTilt, shoulderY - hipY - shoulderW * sinTilt); 
-      
+      ctx.rotate(torsoAngle);
+      ctx.translate(-shoulderW * cosTilt, shoulderY - hipY - shoulderW * sinTilt);
+
       if (!isFlipped) this.lastRenderedJoints.leftShoulder = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.rightShoulder = { x: ctx.getTransform().e, y: ctx.getTransform().f };
-      
-      const armProj = projectLimbSwing(lArmAngle, armLength, this.direction, currentHeight);
-      const computedArmAngle = armProj.angle;
-      const computedArmLength = armProj.length;
-      
-      ctx.rotate(computedArmAngle);
-      
-      // Draw bare arm first
-      drawSleeve(ctx, 'normal', this.skin, computedArmLength, dir, currentBuild);
+
+      const { upper: upperArmLen, lower: forearmLen } = getLimbSegments(armLength, LIMB_PROPORTIONS.upperArmRatio, LIMB_PROPORTIONS.forearmRatio);
+      let shoulderAngle, elbowAngle;
+      if (leftHandOverrideTarget) {
+        const ik = solveTwoBoneIK(leftHandOverrideTarget.x, leftHandOverrideTarget.y, upperArmLen, forearmLen, LEFT_ARM_BEND_DIR);
+        shoulderAngle = ik.angle1;
+        elbowAngle = ik.angle2;
+      } else {
+        shoulderAngle = projectLimbSwing(lArmAngle, armLength, this.direction, currentHeight).angle;
+        elbowAngle = pose.leftElbowAngle || 0;
+      }
+
+      ctx.rotate(shoulderAngle);
+
+      // Draw bare upper arm first
+      drawSleeve(ctx, 'normal', this.skin, upperArmLen, dir, currentBuild);
       // Draw sleeve
-      if (this.shirtStyle !== 'none') drawSleeve(ctx, this.shirtStyle, this.shirtColor, computedArmLength, dir, currentBuild);
-      
+      if (this.shirtStyle !== 'none') drawSleeve(ctx, this.shirtStyle, this.shirtColor, upperArmLen, dir, currentBuild);
+
+      ctx.translate(0, upperArmLen);
+
+      if (!isFlipped) this.lastRenderedJoints.leftElbow = { x: ctx.getTransform().e, y: ctx.getTransform().f };
+      else this.lastRenderedJoints.rightElbow = { x: ctx.getTransform().e, y: ctx.getTransform().f };
+
+      drawJointBlend(ctx, getLimbWidth('arm', dir, currentBuild), this.shirtStyle !== 'none' ? this.shirtColor : this.skin);
+
+      ctx.rotate(elbowAngle);
+
+      // Draw bare forearm first
+      drawSleeve(ctx, 'normal', this.skin, forearmLen, dir, currentBuild, 0.85);
+      // Draw sleeve
+      if (this.shirtStyle !== 'none') drawSleeve(ctx, this.shirtStyle, this.shirtColor, forearmLen, dir, currentBuild, 0.85);
+
       ctx.save();
-      ctx.translate(0, computedArmLength);
-      
+      ctx.translate(0, forearmLen);
+
       if (!isFlipped) this.lastRenderedJoints.leftHand = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.rightHand = { x: ctx.getTransform().e, y: ctx.getTransform().f };
- 
+
       drawHandShape(ctx, this.skin, true, dir);
       drawLeftHandItem(ctx, this.shieldStyle, this.shieldColor, dir);
       ctx.restore();
@@ -315,31 +482,45 @@ export class Character {
     const drawRightLegLayer = () => {
       ctx.save();
       ctx.translate(torsoX_screen + hipW * cosTilt, hipY + hipW * sinTilt);
-      
+
       if (!isFlipped) this.lastRenderedJoints.rightHip = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.leftHip = { x: ctx.getTransform().e, y: ctx.getTransform().f };
-      
-      const legProj = projectLimbSwing(rLegAngle, legLength, this.direction, currentHeight);
-      const computedLegAngle = legProj.angle;
-      const computedLegLength = legProj.length;
-      
-      ctx.rotate(computedLegAngle);
-      
-      // Draw bare leg first
-      drawPants(ctx, 'trousers', this.skin, computedLegLength, dir, currentBuild);
+
+      const footTarget = getStrideTarget(rLegAngle, legLength, this.direction, currentHeight);
+      const { upper: thighLen, lower: shinLen } = getLimbSegments(legLength, LIMB_PROPORTIONS.thighRatio, LIMB_PROPORTIONS.shinRatio);
+      const { angle1: hipAngle, angle2: kneeAngle } = solveTwoBoneIK(footTarget.x, footTarget.y, thighLen, shinLen, LEG_BEND_DIR);
+
+      ctx.rotate(hipAngle);
+
+      // Draw bare thigh first
+      drawPants(ctx, 'trousers', this.skin, thighLen, dir, currentBuild);
       // Draw clothing
-      if (this.pantsStyle !== 'none') drawPants(ctx, this.pantsStyle, this.pantsColor, computedLegLength, dir, currentBuild);
-      
-      ctx.translate(0, computedLegLength);
-      
+      if (this.pantsStyle !== 'none') drawPants(ctx, this.pantsStyle, this.pantsColor, thighLen, dir, currentBuild);
+
+      ctx.translate(0, thighLen);
+
+      if (!isFlipped) this.lastRenderedJoints.rightKnee = { x: ctx.getTransform().e, y: ctx.getTransform().f };
+      else this.lastRenderedJoints.leftKnee = { x: ctx.getTransform().e, y: ctx.getTransform().f };
+
+      drawJointBlend(ctx, getLimbWidth('leg', dir, currentBuild), this.pantsStyle !== 'none' ? this.pantsColor : this.skin);
+
+      ctx.rotate(kneeAngle);
+
+      // Draw bare shin first
+      drawPants(ctx, 'trousers', this.skin, shinLen, dir, currentBuild, 0.85);
+      // Draw clothing
+      if (this.pantsStyle !== 'none') drawPants(ctx, this.pantsStyle, this.pantsColor, shinLen, dir, currentBuild, 0.85);
+
+      ctx.translate(0, shinLen);
+
       // Apply foot rotation from pose animation
       if (pose) {
         ctx.rotate(isFlipped ? pose.leftFootAngle : pose.rightFootAngle);
       }
-      
+
       if (!isFlipped) this.lastRenderedJoints.rightFoot = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.leftFoot = { x: ctx.getTransform().e, y: ctx.getTransform().f };
-      
+
       drawShoe(ctx, this.shoesStyle, this.shoesColor, dir, false);
       ctx.restore();
     };
@@ -402,29 +583,61 @@ export class Character {
       ctx.translate(torsoX_screen, hipY);
       ctx.rotate(torsoAngle); // Follow torso
       ctx.translate(shoulderW * cosTilt, shoulderY - hipY + shoulderW * sinTilt); // Move to shoulder
-      
+
       if (!isFlipped) this.lastRenderedJoints.rightShoulder = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.leftShoulder = { x: ctx.getTransform().e, y: ctx.getTransform().f };
-      
-      const armProj = projectLimbSwing(rArmAngle, armLength, this.direction, currentHeight);
-      const computedArmAngle = armProj.angle;
-      const computedArmLength = armProj.length;
-      
-      ctx.rotate(computedArmAngle);
-      
-      // Draw bare arm first
-      drawSleeve(ctx, 'normal', this.skin, computedArmLength, dir, currentBuild);
+
+      const { upper: upperArmLen, lower: forearmLen } = getLimbSegments(armLength, LIMB_PROPORTIONS.upperArmRatio, LIMB_PROPORTIONS.forearmRatio);
+      const shoulderAngle = rightShoulderAngle;
+      const elbowAngle = rightElbowAngle;
+
+      ctx.rotate(shoulderAngle);
+
+      // Draw bare upper arm first
+      drawSleeve(ctx, 'normal', this.skin, upperArmLen, dir, currentBuild);
       // Draw sleeve
-      if (this.shirtStyle !== 'none') drawSleeve(ctx, this.shirtStyle, this.shirtColor, computedArmLength, dir, currentBuild);
-      
+      if (this.shirtStyle !== 'none') drawSleeve(ctx, this.shirtStyle, this.shirtColor, upperArmLen, dir, currentBuild);
+
+      ctx.translate(0, upperArmLen);
+
+      if (!isFlipped) this.lastRenderedJoints.rightElbow = { x: ctx.getTransform().e, y: ctx.getTransform().f };
+      else this.lastRenderedJoints.leftElbow = { x: ctx.getTransform().e, y: ctx.getTransform().f };
+
+      drawJointBlend(ctx, getLimbWidth('arm', dir, currentBuild), this.shirtStyle !== 'none' ? this.shirtColor : this.skin);
+
+      ctx.rotate(elbowAngle);
+
+      // Draw bare forearm first
+      drawSleeve(ctx, 'normal', this.skin, forearmLen, dir, currentBuild, 0.85);
+      // Draw sleeve
+      if (this.shirtStyle !== 'none') drawSleeve(ctx, this.shirtStyle, this.shirtColor, forearmLen, dir, currentBuild, 0.85);
+
       ctx.save();
-      ctx.translate(0, computedArmLength);
-      
+      ctx.translate(0, forearmLen);
+
       if (!isFlipped) this.lastRenderedJoints.rightHand = { x: ctx.getTransform().e, y: ctx.getTransform().f };
       else this.lastRenderedJoints.leftHand = { x: ctx.getTransform().e, y: ctx.getTransform().f };
- 
+
       drawHandShape(ctx, this.skin, false, dir);
-      drawWeapon(ctx, this.weaponStyle, this.weaponColor, weaponSwing, dir);
+      // Record the arrow as a canvas-space attachment BEFORE (and regardless of) drawing it,
+      // so an export that omits the arrow pixels still tells the game where to put its own.
+      // The bow's frame is this hand's frame turned by the same angle drawWeapon applies
+      // internally, so re-derive that matrix here and project the arrow's endpoints through it.
+      if (bowNock && this.weaponStyle === 'bow') {
+        const geo = getBowArrowGeometry(bowNock);
+        const bowMatrix = ctx.getTransform().rotate((-Math.PI / 4 + weaponSwing_arm) * 180 / Math.PI);
+        const nockPt = bowMatrix.transformPoint(new DOMPoint(geo.nock.x, geo.nock.y));
+        const tipPt = bowMatrix.transformPoint(new DOMPoint(geo.tip.x, geo.tip.y));
+        this.lastRenderedAttachments.arrow = {
+          nock: { x: nockPt.x, y: nockPt.y },
+          tip: { x: tipPt.x, y: tipPt.y },
+          // Canvas convention: y grows downward, so this angle is clockwise-positive.
+          angle: Math.atan2(tipPt.y - nockPt.y, tipPt.x - nockPt.x),
+          drawAmount: pose.drawAmount
+        };
+      }
+
+      drawWeapon(ctx, this.weaponStyle, this.weaponColor, weaponSwing_arm, dir, bowNock, drawArrow);
       ctx.restore();
       ctx.restore();
     };
@@ -436,12 +649,19 @@ export class Character {
     const rightLeg = isFlipped ? drawLeftLegLayer : drawRightLegLayer;
 
     // Z-Sorting logic based on direction (0: S, 1: SE, 2: E, 3: NE, 4: N)
+    // During an archer draw the string arm reaches across the FRONT of the chest, so for
+    // the camera-facing directions it has to hop over the torso in the layer order or the
+    // hand disappears into the body. In the away-facing ones (3/4) the left arm is already
+    // behind the torso, which is what we want there.
+    const isArcherDraw = pose.drawAmount !== undefined;
     let layers = [];
     switch (dir) {
       case 0:
       case 1:
       case 2:
-        layers = [drawCapeLayer, leftArm, leftLeg, drawTorsoLayer, rightLeg, drawHeadLayer, rightArm];
+        layers = isArcherDraw
+          ? [drawCapeLayer, leftLeg, drawTorsoLayer, rightLeg, leftArm, drawHeadLayer, rightArm]
+          : [drawCapeLayer, leftArm, leftLeg, drawTorsoLayer, rightLeg, drawHeadLayer, rightArm];
         break;
       case 3:
       case 4:

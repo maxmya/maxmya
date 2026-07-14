@@ -3,7 +3,7 @@
  * Manages rendering viewport, zoom, panning, world grid, and frame-rate loops.
  */
 
-import { getAnimationPose } from './animations.js?v=6';
+import { getAnimationPose } from './animations.js?v=13';
 
 export class ViewportCanvas {
   /**
@@ -29,6 +29,9 @@ export class ViewportCanvas {
     this.showGrid = true;
     this.showSkeleton = false;
     this.attackStyle = 'melee';
+    // Mirrors the export's "Bake Arrow Into Sprites" setting so the preview shows what will
+    // actually land in the sheet.
+    this.drawArrow = true;
 
     // Animation playback state
     this.animation = 'idle';
@@ -183,7 +186,7 @@ export class ViewportCanvas {
     const pose = getAnimationPose(this.animation, progress, this.character.direction, this.attackStyle);
 
     // Render character at world origin Y:0 (ground level)
-    this.character.render(this.ctx, pose, { drawShadow: true });
+    this.character.render(this.ctx, pose, { drawShadow: true, drawArrow: this.drawArrow });
 
     // Draw skeleton inside the same camera transform so joints align at any zoom
     if (this.showSkeleton) {
@@ -203,10 +206,12 @@ export class ViewportCanvas {
       if (!joints || Object.keys(joints).length === 0) return;
 
       this.ctx.save();
-    
-      // Apply the same camera transform as the character render
-      this.ctx.translate(this.canvas.width / 2 / this.dpr, this.canvas.height / 2 / this.dpr + 80);
-      this.ctx.scale(this.zoom, this.zoom);
+
+      // lastRenderedJoints are captured via ctx.getTransform() during character.render(),
+      // so they're already absolute device-pixel coordinates (post dpr/camera/zoom/pan).
+      // Reset to identity and draw them directly instead of re-applying the camera transform.
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const dpr = this.dpr || 1;
 
       // Connect bones
       const bones = [
@@ -214,16 +219,20 @@ export class ViewportCanvas {
         ['neck', 'head'],
         ['neck', 'leftShoulder'],
         ['neck', 'rightShoulder'],
-        ['leftShoulder', 'leftHand'],
-        ['rightShoulder', 'rightHand'],
+        ['leftShoulder', 'leftElbow'],
+        ['leftElbow', 'leftHand'],
+        ['rightShoulder', 'rightElbow'],
+        ['rightElbow', 'rightHand'],
         ['hip', 'leftHip'],
         ['hip', 'rightHip'],
-        ['leftHip', 'leftFoot'],
-        ['rightHip', 'rightFoot']
+        ['leftHip', 'leftKnee'],
+        ['leftKnee', 'leftFoot'],
+        ['rightHip', 'rightKnee'],
+        ['rightKnee', 'rightFoot']
       ];
 
       this.ctx.strokeStyle = '#06b6d4'; // Cyan bones
-      this.ctx.lineWidth = 2.5 / this.zoom;
+      this.ctx.lineWidth = 2.5 * dpr;
       this.ctx.lineCap = 'round';
       this.ctx.lineJoin = 'round';
 
@@ -239,7 +248,7 @@ export class ViewportCanvas {
       // Draw nodes
       for (const [name, pos] of Object.entries(joints)) {
         this.ctx.beginPath();
-        this.ctx.arc(pos.x, pos.y, 4.5 / this.zoom, 0, Math.PI * 2);
+        this.ctx.arc(pos.x, pos.y, 4.5 * dpr, 0, Math.PI * 2);
       
         // Node coloring
         if (name === 'head') {
@@ -248,12 +257,14 @@ export class ViewportCanvas {
           this.ctx.fillStyle = '#fbbf24'; // Yellow
         } else if (name === 'leftFoot' || name === 'rightFoot') {
           this.ctx.fillStyle = '#10b981'; // Green
+        } else if (name === 'leftElbow' || name === 'rightElbow' || name === 'leftKnee' || name === 'rightKnee') {
+          this.ctx.fillStyle = '#f97316'; // Orange
         } else {
           this.ctx.fillStyle = '#8b5cf6'; // Purple
         }
       
         this.ctx.strokeStyle = '#ffffff';
-        this.ctx.lineWidth = 1.5 / this.zoom;
+        this.ctx.lineWidth = 1.5 * dpr;
         this.ctx.fill();
         this.ctx.stroke();
       }

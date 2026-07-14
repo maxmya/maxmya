@@ -3,7 +3,7 @@
  * Renders keyframe loops to grid arrays, compiles transparent PNGs, and loads/saves JSON configs.
  */
 
-import { getAnimationPose } from './animations.js?v=6';
+import { getAnimationPose } from './animations.js?v=13';
 
 export function compileSpritesheet(character, options = {}) {
   const frameSize = parseInt(options.frameSize) || 128;
@@ -11,9 +11,12 @@ export function compileSpritesheet(character, options = {}) {
   const padding = parseInt(options.padding) || 4;
   const layout = options.layout || 'single_dir'; 
   const drawShadow = options.drawShadow !== false;
+  // Set false to keep the arrow OUT of the baked pixels; its attachment point is exported
+  // either way, so the game can draw its own arrow sprite on top at runtime.
+  const drawArrow = options.drawArrow !== false;
   const currentAnim = options.currentAnim || 'walk';
   const attackStyle = options.attackStyle || 'melee';
-  
+
   let rows = 1;
   let cols = frameCount;
   const oldDir = character.direction;
@@ -36,11 +39,16 @@ export function compileSpritesheet(character, options = {}) {
 
   const baseScale = frameSize / 128;
 
-  // Metadata object tracking joint positions for each generated frame
+  // Metadata object tracking joint positions for each generated frame.
+  // Coordinates are frame-local pixels in canvas convention: origin at the frame cell's
+  // top-left, +y DOWNWARD, so angles are clockwise-positive. Engines with a y-up convention
+  // (LibGDX included) need y flipped against frameSize and the angle negated.
   const metadata = {
     frameSize,
     frameCount: cols,
     directions: rows,
+    coordinateSpace: 'frame-local pixels, origin top-left, +y down, angles clockwise-positive',
+    arrowBaked: drawArrow,
     frames: []
   };
 
@@ -61,7 +69,7 @@ export function compileSpritesheet(character, options = {}) {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(baseScale, baseScale);
-      character.render(ctx, pose, { drawShadow });
+      character.render(ctx, pose, { drawShadow, drawArrow });
       ctx.restore();
 
       // Capture absolute joint positions relative to this frame's cell
@@ -72,7 +80,7 @@ export function compileSpritesheet(character, options = {}) {
         progress: progress,
         joints: {}
       };
-      
+
       if (joints) {
         for (const [jointName, pos] of Object.entries(joints)) {
           // Adjust from global canvas space to local frame space
@@ -82,6 +90,23 @@ export function compileSpritesheet(character, options = {}) {
           };
         }
       }
+
+      // Attachment points, rebased into the same frame-local space as the joints. The arrow
+      // is only present on frames where a bow is actually drawn, so a game can test for it
+      // rather than tracking the animation clock itself.
+      const arrow = character.lastRenderedAttachments && character.lastRenderedAttachments.arrow;
+      if (arrow) {
+        frameData.attachments = {
+          arrow: {
+            nock: { x: Math.round(arrow.nock.x - cellX), y: Math.round(arrow.nock.y - cellY) },
+            tip: { x: Math.round(arrow.tip.x - cellX), y: Math.round(arrow.tip.y - cellY) },
+            angle: Number(arrow.angle.toFixed(4)),
+            angleDeg: Number((arrow.angle * 180 / Math.PI).toFixed(2)),
+            drawAmount: Number(arrow.drawAmount.toFixed(3))
+          }
+        };
+      }
+
       metadata.frames.push(frameData);
     }
   }

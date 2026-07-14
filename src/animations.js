@@ -321,6 +321,60 @@
              pose.torsoX = 2.0 - (easeReturn * 2.0);
            }
          }
+       } else if (attackStyle === 'archer') {
+         // Bow draw. Two things here are deliberately NOT authored as plain swing angles:
+         //
+         // 1. pose.rightArmScreenAngle is the bow arm's shoulder rotation in SCREEN space
+         //    (see the note on that field above getDirAnimProfile). An aim is a pointing
+         //    direction, not a stride, so it is specified directly.
+         // 2. The string hand's angles: pose.drawAmount (0 = reaching for the nock at the
+         //    bow's grip, 1 = full draw anchored at the chest) is resolved by character.js
+         //    into an IK target anchored to the bow arm's actual resolved hand position,
+         //    so the string hand geometrically tracks the bow rather than guessing.
+         //
+         // pose.weaponSwing is applied on top of an upright bow (character.js cancels the
+         // arm's own rotation out of the weapon), so it reads as bow tilt, not absolute.
+         const aimHold = dir === 0 ? -1.35   // South — bow held out to the side, angled down
+           : dir === 2 ? -1.55               // East — level, straight down the profile
+           : dir === 4 ? -1.45               // North — out to the side, slightly raised
+           : isSE ? -1.45                    // SE
+           : -1.65;                          // NE — aiming slightly uphill
+
+         if (progress < 0.4) {
+           // Draw: bow arm swings up to the aim while the string hand hauls back.
+           const t = progress / 0.4;
+           const easeIn = easeInCubic(t);
+           pose.rightArmScreenAngle = aimHold * easeIn;
+           pose.rightElbowAngle = -0.15 * easeIn;
+           pose.drawAmount = easeIn;
+           pose.weaponSwing = -0.08 * easeIn;
+           pose.torsoAngle = -0.08 * easeIn;
+         } else if (progress < 0.6) {
+           // Anchor - hold the full draw steady
+           pose.rightArmScreenAngle = aimHold;
+           pose.rightElbowAngle = -0.15;
+           pose.drawAmount = 1;
+           pose.weaponSwing = -0.08;
+           pose.torsoAngle = -0.08;
+         } else if (progress < 0.75) {
+           // Release - string hand snaps back past anchor, bow arm barely twitches
+           const t = (progress - 0.6) / 0.15;
+           const easeRelease = Math.sin(t * Math.PI / 2);
+           pose.rightArmScreenAngle = aimHold + easeRelease * 0.1;
+           pose.rightElbowAngle = -0.15;
+           pose.drawAmount = 1 + easeRelease * 0.15;
+           pose.weaponSwing = -0.08 + easeRelease * 0.12;
+           pose.torsoAngle = -0.08;
+         } else {
+           // Follow-through / recovery — bow arm lowers back to rest
+           const t = (progress - 0.75) / 0.25;
+           const easeReturn = Math.sin(t * Math.PI / 2);
+           pose.rightArmScreenAngle = (aimHold + 0.1) * (1 - easeReturn);
+           pose.rightElbowAngle = -0.15 + easeReturn * 0.15;
+           pose.drawAmount = 1.15 - easeReturn * 1.15;
+           pose.weaponSwing = 0.04 * (1 - easeReturn);
+           pose.torsoAngle = -0.08 + easeReturn * 0.08;
+         }
        } else {
          // Melee slash animation (direction-aware)
          if (progress < 0.35) {
@@ -328,6 +382,9 @@
            const easeIn = easeInCubic(t);
            pose.torsoY = easeIn * 1;
            pose.leftArmAngle = easeIn * 0.5;
+           // Windup: weapon arm cocks sharply at the elbow, pulling the blade in tight
+           pose.rightElbowAngle = -easeIn * 1.9;
+           pose.leftElbowAngle = easeIn * 0.6;
 
            if (dir === 0) { // South (Front) - Overhead slam prep
              pose.torsoAngle = 0;
@@ -359,6 +416,9 @@
            const t = (progress - 0.35) / 0.25;
            const easeSwing = Math.sin(t * Math.PI / 2);
            pose.leftArmAngle = 0.5 - (easeSwing * 0.8);
+           // Strike: elbow whips open through the arc, leading with the shoulder
+           pose.rightElbowAngle = -1.9 + (easeSwing * 1.7);
+           pose.leftElbowAngle = 0.6 - (easeSwing * 0.3);
 
            if (dir === 0) { // South (Front) - Slam down
              pose.torsoY = 1 + (easeSwing * 2);
@@ -395,6 +455,9 @@
            const t = (progress - 0.6) / 0.4;
            const easeReturn = Math.sin(t * Math.PI / 2);
            pose.leftArmAngle = -0.3 + (easeReturn * 0.4);
+           // Recovery: elbow settles from the extended strike back to a relaxed guard bend
+           pose.rightElbowAngle = -0.2 - (easeReturn * 0.1);
+           pose.leftElbowAngle = 0.3 - (easeReturn * 0.3);
 
            if (dir === 0) {
              pose.rightArmAngle = 1.2 - (easeReturn * 1.3);
@@ -423,6 +486,17 @@
              pose.torsoX = 1.5 - (easeReturn * 1.5);
              pose.torsoY = 2.5 - (easeReturn * 2.5);
            }
+         }
+
+         // South and North have a facing vector with no x component, so the stride
+         // projection flattens the whole slash arc above into "arm hangs straight down" —
+         // the blade would spin in a frozen hand. The arc is authored in screen terms
+         // anyway (-2.6 = cocked up and back over the shoulder, +1.2 = swung down across
+         // the body), so hand it to the shoulder directly in those two directions. The
+         // diagonals and the profile keep the projection, which works there because their
+         // facing vector actually has an x component to swing along.
+         if (dir === 0 || dir === 4) {
+           pose.rightArmScreenAngle = pose.rightArmAngle;
          }
        }
        pose.capeWave = progress * pi2 * 1.8;
@@ -467,6 +541,21 @@
    return pose;
  }
 
+/**
+ * A note on the two ways a pose can drive the weapon arm:
+ *
+ * - pose.rightArmAngle is a SWING. character.js runs it through the stride projection,
+ *   which multiplies it by the facing vector — so it foreshortens as the character turns,
+ *   the way a walking arm should. But South and North have facing vectors of (0, ±1): no x
+ *   component, so a swing there projects to zero rotation and the arm simply hangs.
+ * - pose.rightArmScreenAngle is a SCREEN-SPACE shoulder rotation, used verbatim, no
+ *   projection. Clockwise-positive, 0 = arm hanging straight down, ~-pi/2 = arm extended
+ *   out to the character's weapon side, ~±pi = raised overhead.
+ *
+ * Reach for the screen angle whenever the pose is a deliberate pointing/arcing action
+ * (aiming a bow, swinging a blade overhead) rather than a gait. Setting it overrides
+ * rightArmAngle for that frame.
+ */
  function getDirAnimProfile(direction) {
    // Returns direction-specific animation modifiers
    const isFlipped = direction >= 5;

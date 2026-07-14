@@ -99,6 +99,24 @@ function drawCapsuleLimb(ctx, length, width, color, detailLevel = 1) {
   // No outline — body parts blend together
 }
 
+/**
+ * Fills the seam where two capsule segments meet at a bent joint (elbow/knee).
+ * Same no-outline gradient-blend technique used for the neck seam in character.js's
+ * drawHeadLayer — a soft filled patch, not a literal geometric fix.
+ */
+export function drawJointBlend(ctx, width, color) {
+  if (window.isOutlinePass) return;
+
+  ctx.beginPath();
+  ctx.arc(0, 0, width, 0, Math.PI * 2);
+  const grad = ctx.createRadialGradient(-width * 0.2, -width * 0.2, 0, 0, 0, width);
+  grad.addColorStop(0, lighten(color, 0.18));
+  grad.addColorStop(0.6, color);
+  grad.addColorStop(1, darken(color, 0.2));
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
 /* ─── Head Shapes — NO outline on head itself, enhanced with detailed shading ─── */
 
 export function drawHeadShape(ctx, type, skinColor, dir = 0, build = 1.0, noseSize = 1.0, noseShape = 'normal', gender = 'male') {
@@ -1025,10 +1043,10 @@ function drawBust(ctx, w, yOff, bSize, color, dir, dirProfile) {
   }
 }
 
-export function drawSleeve(ctx, style, color, length = 24, dir = 0, build = 1.0) {
+export function drawSleeve(ctx, style, color, length = 24, dir = 0, build = 1.0, widthMult = 1.0) {
   if (style === 'none' || window.isOutlinePass) return;
   const dirProfile = getLimbDirProfile(dir);
-  const w = 5.5 * build * dirProfile.widthScale;
+  const w = 5.5 * build * dirProfile.widthScale * widthMult;
 
   ctx.save();
   // Apply perspective shear for the limb
@@ -1037,16 +1055,23 @@ export function drawSleeve(ctx, style, color, length = 24, dir = 0, build = 1.0)
   ctx.restore();
 }
 
-export function drawPants(ctx, style, color, legLength = 26, dir = 0, build = 1.0) {
+export function drawPants(ctx, style, color, legLength = 26, dir = 0, build = 1.0, widthMult = 1.0) {
   if (window.isOutlinePass) return;
   const dirProfile = getLimbDirProfile(dir);
-  const w = 6 * build * dirProfile.widthScale;
+  const w = 6 * build * dirProfile.widthScale * widthMult;
   if (style === 'shorts') legLength *= 0.6;
 
   ctx.save();
   ctx.transform(1, dirProfile.shearY, 0, 1, 0, 0);
   drawCapsuleLimb(ctx, legLength, w, color, dirProfile.detailLevel);
   ctx.restore();
+}
+
+/** Width a limb segment would be drawn at, for sizing an elbow/knee joint-blend patch to match. */
+export function getLimbWidth(kind, dir = 0, build = 1.0) {
+  const dirProfile = getLimbDirProfile(dir);
+  const base = kind === 'leg' ? 6 : 5.5;
+  return base * build * dirProfile.widthScale;
 }
 
 function getLimbDirProfile(dir) {
@@ -1410,7 +1435,34 @@ export function drawCape(ctx, style, color, waveAngle = 0, dir = 0) {
 
 /* ─── Weapons — keep outlines for accessories ─── */
 
-export function drawWeapon(ctx, style, color, swingAngle = 0, dir = 0) {
+/** How far the arrow's tip juts out past the grip, beyond the drawn length. */
+const ARROW_OVERHANG = 24;
+
+/**
+ * Arrow geometry for a drawn bow, in the bow's own (post-rotation) frame.
+ * Single source of truth: drawWeapon paints this, and character.js projects the same points
+ * into canvas space to export as a per-frame attachment for the game engine.
+ * @param {{x: number, y: number}} nock - the string hand, in the bow's frame
+ * @returns {{nock: {x,y}, tip: {x,y}, ux: number, uy: number, length: number}} unit vector
+ *   (ux, uy) points nock -> tip, i.e. the direction the arrow will fly.
+ */
+export function getBowArrowGeometry(nock) {
+  const len = Math.hypot(nock.x, nock.y);
+  // Points from the nock through the grip; degenerate when the hand is at the grip (an
+  // undrawn bow), so fall back to the bow's forward axis.
+  const ux = len > 1 ? -nock.x / len : 1;
+  const uy = len > 1 ? -nock.y / len : 0;
+  const shaft = len + ARROW_OVERHANG;
+  return {
+    nock: { x: nock.x, y: nock.y },
+    tip: { x: nock.x + ux * shaft, y: nock.y + uy * shaft },
+    ux,
+    uy,
+    length: shaft
+  };
+}
+
+export function drawWeapon(ctx, style, color, swingAngle = 0, dir = 0, nock = null, drawArrow = true) {
   if (style === 'none' || window.isOutlinePass) return;
   ctx.save();
   ctx.rotate(-Math.PI / 4 + swingAngle);
@@ -1520,12 +1572,48 @@ export function drawWeapon(ctx, style, color, swingAngle = 0, dir = 0) {
     ctx.strokeStyle = '#8b6c3c';
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    // Bowstring. `nock` (the string hand, in this same post-rotation frame) is supplied by
+    // character.js during an archer draw; without it the bow is just being carried, so the
+    // string stays at rest between the limb tips.
+    const tipX = -15 + 25 * Math.cos(Math.PI / 3);
+    const tipY = 25 * Math.sin(Math.PI / 3);
+
     ctx.beginPath();
-    ctx.moveTo(-2, -22);
-    ctx.lineTo(-2, 22);
+    if (nock) {
+      ctx.moveTo(tipX, -tipY);
+      ctx.lineTo(nock.x, nock.y);
+      ctx.lineTo(tipX, tipY);
+    } else {
+      ctx.moveTo(-2, -22);
+      ctx.lineTo(-2, 22);
+    }
     ctx.strokeStyle = '#e5e7eb';
     ctx.lineWidth = 1.5;
     ctx.stroke();
+
+    if (nock && drawArrow) {
+      // Arrow: nocked on the string, running out through the grip and past the bow's face.
+      // Geometry comes from getBowArrowGeometry so the pixels drawn here and the attachment
+      // point character.js exports for the game cannot drift apart.
+      const { tip, ux, uy } = getBowArrowGeometry(nock);
+
+      ctx.beginPath();
+      ctx.moveTo(nock.x, nock.y);
+      ctx.lineTo(tip.x, tip.y);
+      ctx.strokeStyle = '#c8a06a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Arrowhead
+      ctx.beginPath();
+      ctx.moveTo(tip.x + ux * 5, tip.y + uy * 5);
+      ctx.lineTo(tip.x - uy * 3, tip.y + ux * 3);
+      ctx.lineTo(tip.x + uy * 3, tip.y - ux * 3);
+      ctx.closePath();
+      ctx.fillStyle = '#d1d5db';
+      ctx.fill();
+    }
   } else {
     ctx.beginPath();
     ctx.roundRect(-3, -10, 6, 40, 2);

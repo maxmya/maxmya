@@ -3,8 +3,8 @@
  * Integrates viewport loop, character state listeners, presets loader, and export compilers.
  */
 
-import { Character } from './character.js?v=7';
-import { ViewportCanvas } from './canvas.js?v=7';
+import { Character } from './character.js?v=17';
+import { ViewportCanvas } from './canvas.js?v=13';
 import {
   compileSpritesheet,
   downloadPNG,
@@ -12,8 +12,8 @@ import {
   downloadMetadataJSON,
   downloadConfigJSON,
   parseConfigJSON
-} from './exporter.js?v=7';
-import { getAnimationPose } from './animations.js?v=7';
+} from './exporter.js?v=13';
+import { getAnimationPose } from './animations.js?v=13';
 
 // Initialize on module load
 // 1. Initialize character and canvas engine
@@ -88,6 +88,7 @@ const elements = {
   sliderPadding: document.getElementById('slider-padding'),
   txtPadding: document.getElementById('txt-padding'),
   checkIncludeShadow: document.getElementById('check-include-shadow'),
+  checkBakeArrow: document.getElementById('check-bake-arrow'),
   checkExportAtlas: document.getElementById('check-export-atlas'),
   checkExportMetadata: document.getElementById('check-export-metadata'),
   exportPreviewCanvas: document.getElementById('export-preview-canvas'),
@@ -544,7 +545,7 @@ elements.sliderSpeed.addEventListener('input', () => {
 const refreshExportTriggers = [
   elements.selectExportLayout, elements.selectFrameSize,
   elements.sliderFrameCount, elements.sliderPadding, elements.checkIncludeShadow,
-  elements.checkExportAtlas, elements.checkExportMetadata
+  elements.checkBakeArrow, elements.checkExportAtlas, elements.checkExportMetadata
 ];
 refreshExportTriggers.forEach(input => {
   input.addEventListener('input', () => {
@@ -553,6 +554,8 @@ refreshExportTriggers.forEach(input => {
       elements.txtFrameCount.innerText = `${elements.sliderFrameCount.value} frames`;
     } else if (input === elements.sliderPadding) {
       elements.txtPadding.innerText = `${elements.sliderPadding.value} px`;
+    } else if (input === elements.checkBakeArrow) {
+      viewport.drawArrow = elements.checkBakeArrow.checked;
     }
     updateExportPreview();
   });
@@ -566,6 +569,7 @@ elements.btnExportPng.addEventListener('click', () => {
     padding: elements.sliderPadding.value,
     layout: elements.selectExportLayout.value,
     drawShadow: elements.checkIncludeShadow.checked,
+    drawArrow: elements.checkBakeArrow.checked,
     exportAtlas: elements.checkExportAtlas.checked,
     currentAnim: viewport.animation,
     attackStyle: elements.selectAttackStyle.value
@@ -702,6 +706,7 @@ function updateExportPreview() {
     padding: elements.sliderPadding.value,
     layout: elements.selectExportLayout.value,
     drawShadow: elements.checkIncludeShadow.checked,
+    drawArrow: elements.checkBakeArrow.checked,
     currentAnim: viewport.animation,
     attackStyle: elements.selectAttackStyle.value
   };
